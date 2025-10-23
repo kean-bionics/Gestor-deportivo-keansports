@@ -339,6 +339,24 @@ def descomponer_placas(peso_total, peso_barra):
 
     return peso_cargado_total, placas_por_lado
 
+def save_main_data(df_edited):
+    """Guarda el DataFrame editado de atletas en el archivo XLSX."""
+    try:
+        # Aseguramos que la columna 'Última_Fecha' sea un tipo compatible antes de guardar (ej. str o datetime)
+        if 'Última_Fecha' in df_edited.columns:
+            df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
+        
+        # 1. Sobrescribir el archivo Excel
+        df_edited.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
+        
+        # 2. Limpiar la caché de los datos principales
+        load_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar los datos de atletas: {e}")
+        return False
+
 def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     """Añade una nueva fila al archivo readiness_data.xlsx, actualiza el archivo y el DataFrame global."""
     
@@ -369,14 +387,13 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     except Exception as e:
         st.error(f"Error al guardar los datos de bienestar: {e}")
         return current_df, False
-
+    
 def save_tests_data(df_edited):
     """Guarda el DataFrame editado de pruebas activas en el archivo XLSX."""
-    
     # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
     df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
     
-    # Aseguramos que solo se guardan las columnas requeridas
+    # Aseguramos que solo se guardan las columnas requeridas (por si se añade una columna temporal)
     df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
     
     try:
@@ -491,18 +508,62 @@ if rol_actual == 'Entrenador':
                 st.rerun()
 
         st.markdown("---")
-        st.caption(f"Archivo de origen: **{EXCEL_FILE}**")
+        st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
+        st.warning("⚠️ **Advertencia**: Los cambios hechos aquí sobrescribirán el archivo **atletas_data.xlsx**. Asegúrate de mantener la columna 'Atleta' única y las 'Contraseña' seguras. Puedes añadir o eliminar filas. Para **nuevas pruebas RM**, simplemente agrega una nueva columna con su nombre (Ej: `Biceps_RM`).")
+
+        df_editor_main = df_atletas.copy()
         
-        df_mostrar = df_atletas.drop(columns=['Contraseña'], errors='ignore')
-        st.dataframe(df_mostrar, use_container_width=True)
+        # 1. Widget de edición para datos principales de atletas
+        df_edited_main = st.data_editor(
+            df_editor_main, 
+            num_rows="dynamic",
+            column_config={
+                # ID no editable para evitar que el usuario lo cambie, se puede auto-asignar
+                "ID": st.column_config.NumberColumn("ID", disabled=True), 
+                "Atleta": st.column_config.TextColumn("Atleta", help="Nombre único del atleta y Usuario de Login", required=True),
+                "Contraseña": st.column_config.TextColumn("Contraseña", required=True),
+                "Rol": st.column_config.SelectboxColumn("Rol", options=['Atleta', 'Entrenador']),
+                # Configurar RM columns con formatos numéricos
+                "Sentadilla_RM": st.column_config.NumberColumn("Sentadilla_RM (kg)", format="%.1f"),
+                "PressBanca_RM": st.column_config.NumberColumn("PressBanca_RM (kg)", format="%.1f"),
+                "PesoCorporal": st.column_config.NumberColumn("PesoCorporal (kg)", format="%.1f"),
+                "Última_Fecha": st.column_config.DateColumn("Última_Fecha")
+                
+            },
+            use_container_width=True,
+            key="main_data_editor"
+        )
         
+        # 2. Botón de guardado
+        if st.button("💾 Guardar Cambios en Datos de Atletas y Aplicar", type="primary", key="save_main_data_btn"):
+            # Lógica para rellenar IDs faltantes antes de guardar (importante para nuevos atletas)
+            if 'ID' in df_edited_main.columns:
+                # Encuentra el ID máximo actual (excluyendo NaNs)
+                max_id = df_edited_main['ID'].dropna().max()
+                if pd.isna(max_id): max_id = 0
+                
+                # Rellenar ID solo si es NaN o None
+                for index, row in df_edited_main.iterrows():
+                    if pd.isna(row['ID']):
+                        max_id += 1
+                        df_edited_main.loc[index, 'ID'] = max_id
+                        
+            # Asegurar que las columnas requeridas (al menos Atleta y Contraseña) no sean nulas después de la edición.
+            df_edited_cleaned_main = df_edited_main.dropna(subset=['Atleta', 'Contraseña'], how='any')
+
+            if save_main_data(df_edited_cleaned_main):
+                st.success("✅ Datos de Atletas actualizados y guardados con éxito. Recargando aplicación...")
+                st.rerun()
+            else:
+                st.error("❌ No se pudieron guardar los cambios en los datos de atletas.")
+
         st.markdown("---")
-        st.subheader("Gestión de Pruebas (Modularidad de la Calculadora)")
+        st.subheader("2. Gestión de Pruebas (Modularidad de la Calculadora)")
         st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito. Puedes borrar filas haciendo clic en el número de fila.**")
         
-        # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE CORREGIDA ---
+        # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE CORREGIDA (Pruebas) ---
         
-        # 1. Widget de edición
+        # 1. Widget de edición (usa el DF completo)
         df_edited = st.data_editor(
             df_pruebas_full, # Usamos el DF COMPLETO
             num_rows="dynamic", # Permite añadir y eliminar filas
@@ -512,8 +573,7 @@ if rol_actual == 'Entrenador':
                     help="Marca para mostrar la prueba en la calculadora.",
                     default=False,
                 ),
-                # CORRECCIÓN CLAVE: Habilitar la edición de ColumnaRM
-                "ColumnaRM": st.column_config.Column("ColumnaRM"), 
+                "ColumnaRM": st.column_config.Column("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en Datos de Atletas (Ej: Biceps_RM)"), 
                 "NombrePrueba": st.column_config.Column("NombrePrueba"),
             },
             use_container_width=True,
@@ -521,7 +581,7 @@ if rol_actual == 'Entrenador':
         )
 
         # 2. Botón de guardado
-        if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="primary"):
+        if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="secondary", key="save_tests_data_btn"):
             # Asegurarse de que no haya filas completamente vacías
             df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
@@ -540,6 +600,11 @@ calc_tab = tab2
 with calc_tab:
     st.header("🧮 Calculadora de Carga")
     
+    # Manejo de error si el atleta no está en el DF después de la edición
+    if atleta_actual not in df_atletas['Atleta'].values:
+        st.error(f"El atleta '{atleta_actual}' no se encuentra en la base de datos. Por favor, contacta al entrenador o cierra sesión.")
+        st.stop()
+        
     datos_usuario = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0]
     
     st.write(f"**Hola, {atleta_actual}. Selecciona un ejercicio para cargar tu RM registrado.**")
@@ -567,6 +632,7 @@ with calc_tab:
             if not columna_rm_series.empty:
                 columna_rm = columna_rm_series.iloc[0]
             
+            # Buscar el valor de RM en el DataFrame de Atletas, incluso si es una columna nueva
             if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
                 rm_inicial = float(datos_usuario[columna_rm]) 
             
