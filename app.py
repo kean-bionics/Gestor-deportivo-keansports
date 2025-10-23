@@ -78,6 +78,10 @@ def load_data():
         
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
+
+    # --- Quitamos Nueva_Prueba de la carga para no depender de ella en el guardado principal ---
+    if 'Nueva_Prueba' in df.columns:
+        df = df.drop(columns=['Nueva_Prueba'])
     
     return df, status_message 
 
@@ -104,6 +108,7 @@ def load_calendar_data():
         calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
         calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
 
+    # Convertir a booleano antes de retornar
     if 'Habilitado' in calendar_df.columns:
         calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
 
@@ -136,7 +141,6 @@ def load_tests_data():
 
     df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     
-    # Retorna el DF completo (con la columna Visible booleana)
     return df_tests, status_message 
 
 @st.cache_data(ttl=3600)
@@ -242,7 +246,8 @@ def load_readiness_data():
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
-df_calendario = load_calendar_data()
+df_calendario_full = load_calendar_data() # Cargamos el DF completo para editar
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() # Filtramos para mostrar al atleta
 df_pruebas_full, tests_status = load_tests_data() 
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
@@ -346,8 +351,7 @@ def save_main_data(df_edited):
         df_edited.columns = df_edited.columns.str.strip()
         df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
-        # --- CAMBIO CLAVE: Eliminar la columna temporal 'Nueva_Prueba' ---
-        # Si la columna existe, la eliminamos antes de guardar para que no persista si no fue renombrada
+        # --- Revertimos: Ya no necesitamos la lógica de Nueva_Prueba aquí ---
         if 'Nueva_Prueba' in df_edited.columns:
             df_edited = df_edited.drop(columns=['Nueva_Prueba'])
         
@@ -425,6 +429,29 @@ def save_tests_data(df_edited):
         return True
     except Exception as e:
         st.error(f"Error al guardar las pruebas: {e}")
+        return False
+
+# --- NUEVA FUNCIÓN PARA GUARDAR EL CALENDARIO ---
+def save_calendar_data(df_edited):
+    """Guarda el DataFrame editado de calendario en el archivo XLSX."""
+    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') # Limpiar filas sin datos esenciales
+
+    # 1. Aseguramos que la columna 'Habilitado' tenga 'Sí' o 'No' al guardar en Excel
+    df_edited_cleaned['Habilitado'] = df_edited_cleaned['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
+    
+    # 2. Aseguramos que solo se guardan las columnas requeridas
+    df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
+    
+    try:
+        # 3. Sobrescribir el archivo Excel
+        df_to_save.to_excel(CALENDAR_FILE, index=False, engine='openpyxl')
+        
+        # 4. Limpiar la caché del calendario para que se actualice
+        load_calendar_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el calendario: {e}")
         return False
 
 
@@ -528,7 +555,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("✅ **Gestión:** Para **añadir nuevas pruebas RM**, debe agregar la columna al archivo **atletas_data.xlsx** manualmente y luego recargar la aplicación.")
+        st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna al archivo **atletas_data.xlsx** manualmente, subirlo a GitHub y luego hacer clic en 'Recargar Datos Atletas...'.")
 
         df_editor_main = df_atletas.copy()
         
@@ -573,7 +600,7 @@ if rol_actual == 'Entrenador':
         st.subheader("2. Gestión de Pruebas (Modularidad de la Calculadora)")
         st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito. Puedes borrar filas haciendo clic en el número de fila.**")
         
-        # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE CORREGIDA (Pruebas) ---
+        # --- TABLA EDITABLE DE PRUEBAS ---
         
         # 1. Widget de edición
         df_edited = st.data_editor(
@@ -770,13 +797,48 @@ with CALENDAR_TAB:
     st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
     
     if rol_actual == 'Entrenador':
-        st.subheader("Vista Completa (Entrenador)")
-        st.warning("Edita el archivo 'calendario_data.xlsx' para actualizar el calendario y usar 'Sí'/'No' en la columna 'Habilitado'.")
-        eventos_mostrar = df_calendario
+        st.subheader("Gestión de Cronograma (Vista Entrenador)")
+        st.caption("⚠️ **Edita, añade o elimina filas directamente en la tabla. El 'chulito' en 'Habilitado' controla la visibilidad para los atletas.**")
+        
+        # Copiamos el DF completo (booleano) para la edición
+        df_calendar_edit = df_calendario_full.copy()
+        
+        # Widget de edición para el calendario
+        df_edited_calendar = st.data_editor(
+            df_calendar_edit,
+            num_rows="dynamic",
+            column_config={
+                "Fecha": st.column_config.DateColumn("Fecha", format="YYYY-MM-DD", required=True),
+                "Evento": st.column_config.TextColumn("Evento", required=True),
+                "Habilitado": st.column_config.CheckboxColumn(
+                    "Habilitado",
+                    help="Marcar para que los atletas puedan ver el evento.",
+                    default=True,
+                )
+            },
+            use_container_width=True,
+            key="calendar_data_editor"
+        )
+        
+        # Botón de guardado
+        if st.button("💾 Guardar Cambios en Calendario y Aplicar", type="primary", key="save_calendar_data_btn"):
+            df_edited_cleaned = df_edited_calendar.dropna(subset=['Evento', 'Fecha'], how='any')
+
+            if save_calendar_data(df_edited_cleaned):
+                st.success("✅ Calendario actualizado y guardado con éxito. Recargando aplicación...")
+                st.rerun()
+            else:
+                st.error("❌ No se pudieron guardar los cambios en el calendario.")
+        
+        st.markdown("---")
+        st.subheader(f"Vista del Atleta")
+        eventos_mostrar = df_calendario # Usamos el DF ya filtrado globalmente
+        
     else:
         st.subheader(f"Próximos Eventos Habilitados para {atleta_actual}")
-        eventos_mostrar = df_calendario[df_calendario['Habilitado'] == True].drop(columns=['Habilitado'], errors='ignore')
+        eventos_mostrar = df_calendario
     
+    # Muestra la versión filtrada/actualizada
     st.dataframe(eventos_mostrar, use_container_width=True)
 
 # ----------------------------------------------------------------------------------
