@@ -146,7 +146,7 @@ def check_login(username, password):
 
 def login_form():
     """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
-    st.markdown("---")
+    # NO se usa st.sidebar aquí
     with st.form("login_form"):
         username = st.text_input("Usuario (Nombre del Atleta)")
         password = st.text_input("Contraseña", type="password")
@@ -192,27 +192,29 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 # ----------------------------------------------------------------------
-# --- PANTALLA DE ACCESO/BIENVENIDA (CENTRALIZADA CON COLORES) ---
+# --- PANTALLA DE ACCESO/BIENVENIDA (LOGO IZQUIERDA, TEXTO CENTRADO) ---
 # ----------------------------------------------------------------------
 if not st.session_state['logged_in']:
     
-    # Creamos 3 columnas: [Espaciador izquierdo (1), Columna central para el contenido (3), Espaciador derecho (1)]
+    # Fila Superior: Logo a la izquierda (1) y Espaciador (10)
+    logo_col, spacer_col = st.columns([1, 10])
+    with logo_col:
+        st.image(LOGO_PATH, width=120) 
+    
+    st.markdown("---") 
+
+    # Contenido Central: [Espaciador (1), Contenido (3), Espaciador (1)]
     col1, col2, col3 = st.columns([1, 3, 1]) 
     
-    with col2: # Todo el contenido se centra en la columna del medio
+    with col2: 
         
-        # Centrado del logo
-        logo_col_left, logo_col_center, logo_col_right = st.columns([1, 3, 1])
-        with logo_col_center:
-            st.image(LOGO_PATH, width=250)
-            
-        # Título principal con color NARANJA (#FFA500)
+        # Título principal con color NARANJA y centrado forzado
         st.markdown(
             f"<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>", 
             unsafe_allow_html=True
         )
         
-        # Subtítulo con color BLANCO
+        # Subtítulo con color BLANCO y centrado forzado
         st.markdown(
             f"<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", 
             unsafe_allow_html=True
