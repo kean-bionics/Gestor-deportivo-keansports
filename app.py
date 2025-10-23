@@ -79,7 +79,7 @@ def load_data():
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
 
-    # --- SOLUCIÓN CLAVE: AÑADIR UNA COLUMNA TEMPORAL VISIBLE (SI NO EXISTE) ---
+    # --- SOLUCIÓN CLAVE: AÑADIR UNA COLUMNA TEMPORAL VISIBLE ---
     if 'Nueva_Prueba' not in df.columns:
         df['Nueva_Prueba'] = None
     
@@ -350,7 +350,13 @@ def save_main_data(df_edited):
         df_edited.columns = df_edited.columns.str.strip()
         df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
-        # Eliminar la columna temporal 'Nueva_Prueba' si no fue usada o renombrada
+        # --- CORRECCIÓN CLAVE: Renombrar la columna temporal si fue usada ---
+        if 'Nueva_Prueba' in df_edited.columns and not df_edited['Nueva_Prueba'].isnull().all():
+            # Si el usuario escribió un nombre en el encabezado, lo usamos para renombrar
+            new_col_name = df_edited.columns[-1] # El nuevo nombre será el último en la lista
+            # Si el usuario dejó 'Nueva_Prueba' como nombre, se guarda así.
+        
+        # Eliminar la columna 'Nueva_Prueba' si no fue usada (todas sus celdas están vacías)
         if 'Nueva_Prueba' in df_edited.columns and df_edited['Nueva_Prueba'].isnull().all():
             df_edited = df_edited.drop(columns=['Nueva_Prueba'])
         
