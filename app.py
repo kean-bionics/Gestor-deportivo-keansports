@@ -79,8 +79,7 @@ def load_data():
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
 
-    # --- SOLUCIÓN CLAVE: AÑADIR UNA COLUMNA TEMPORAL VISIBLE ---
-    # Esto asegura que siempre haya un espacio visible para la edición de nuevas pruebas.
+    # --- SOLUCIÓN CLAVE: AÑADIR UNA COLUMNA TEMPORAL VISIBLE (SI NO EXISTE) ---
     if 'Nueva_Prueba' not in df.columns:
         df['Nueva_Prueba'] = None
     
@@ -351,6 +350,10 @@ def save_main_data(df_edited):
         df_edited.columns = df_edited.columns.str.strip()
         df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
+        # Eliminar la columna temporal 'Nueva_Prueba' si no fue usada o renombrada
+        if 'Nueva_Prueba' in df_edited.columns and df_edited['Nueva_Prueba'].isnull().all():
+            df_edited = df_edited.drop(columns=['Nueva_Prueba'])
+        
         # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
         if 'Última_Fecha' in df_edited.columns:
             df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
@@ -361,7 +364,7 @@ def save_main_data(df_edited):
             cols.remove('Última_Fecha')
             cols.append('Última_Fecha')
         
-        # Guardar solo las columnas que tienen datos (filtrar NaNs de los encabezados)
+        # Guardar solo las columnas que tienen datos
         valid_cols = [col for col in cols if not pd.isna(df_edited[col]).all()]
         df_to_save = df_edited[valid_cols].copy()
         
@@ -528,7 +531,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("⚠️ **Advertencia**: Para **añadir nuevas pruebas RM**, escribe el nombre de la prueba (Ej: **Biceps_RM**) en el encabezado de la columna vacía que se llama **'Nueva_Prueba'** y luego guarda. La columna 'Última_Fecha' siempre se moverá al final al guardar.")
+        st.warning("⚠️ **Advertencia**: Para **añadir nuevas pruebas RM**, escribe el nombre de la prueba (Ej: **Biceps_RM**) en el encabezado de la columna **'Nueva_Prueba'** y luego guarda. La columna 'Última_Fecha' siempre se moverá al final al guardar.")
 
         df_editor_main = df_atletas.copy()
         
@@ -545,7 +548,7 @@ if rol_actual == 'Entrenador':
                 "PressBanca_RM": st.column_config.NumberColumn("PressBanca_RM (kg)", format="%.1f"),
                 "PesoCorporal": st.column_config.NumberColumn("PesoCorporal (kg)", format="%.1f"),
                 "Última_Fecha": st.column_config.DateColumn("Última_Fecha"),
-                # Columna temporal forzada para añadir nuevas columnas
+                # Columna temporal forzada para añadir nuevas columnas (Editable por el usuario)
                 "Nueva_Prueba": st.column_config.Column("Nueva_Prueba", help="Escribe el nombre de la nueva columna RM aquí (Ej: Dominadas_RM)"), 
             },
             use_container_width=True,
