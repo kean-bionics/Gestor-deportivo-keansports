@@ -21,7 +21,7 @@ PRUEBAS_FILE = 'pruebas_activas.xlsx'
 # Archivo 4: Perfiles de Atletas
 PERFILES_FILE = 'perfiles.xlsx'
 
-# Archivo 5: Ranking (NUEVO)
+# Archivo 5: Ranking
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces', 'Puntos']
 
@@ -41,6 +41,9 @@ def load_data():
     if excel_exists:
         try:
             df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
+            
+            # Limpieza de encabezados para evitar KeyErrors
+            df.columns = df.columns.str.strip() 
             
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
             if missing_cols:
@@ -87,6 +90,7 @@ def load_calendar_data():
     if excel_exists:
         try:
             calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
+            calendar_df.columns = calendar_df.columns.str.strip() # Limpieza de encabezados
         except:
              excel_exists = False
 
@@ -124,6 +128,7 @@ def load_tests_data():
     
     try:
         df_tests = pd.read_excel(PRUEBAS_FILE, engine='openpyxl')
+        df_tests.columns = df_tests.columns.str.strip() # Limpieza de encabezados
     except Exception as e:
         status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
         return pd.DataFrame(), status_message 
@@ -138,7 +143,6 @@ def load_perfil_data():
     df_perfil = pd.DataFrame()
     excel_exists = os.path.exists(PERFILES_FILE)
 
-    # DataFrame básico para crear el archivo si no existe
     DEFAULT_PROFILE_DATA = {
         'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez'],
         'Edad': [30, 25, 22],
@@ -153,6 +157,7 @@ def load_perfil_data():
     if excel_exists:
         try:
             df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
+            df_perfil.columns = df_perfil.columns.str.strip() # Limpieza de encabezados
         except:
              excel_exists = False
 
@@ -163,7 +168,6 @@ def load_perfil_data():
 
     return df_perfil
 
-# --- NUEVA FUNCIÓN DE CARGA DE RANKING ---
 @st.cache_data(ttl=3600)
 def load_ranking_data():
     """Carga los datos de ranking desde el archivo Excel. Si no existe, lo crea."""
@@ -173,11 +177,21 @@ def load_ranking_data():
     if excel_exists:
         try:
             df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
+            # SOLUCIÓN CRÍTICA: ELIMINAR ESPACIOS EN BLANCO DE LOS ENCABEZADOS
+            df_ranking.columns = df_ranking.columns.str.strip() 
+            
+            missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
+            if missing_cols:
+                 # Si faltan columnas, se devuelve un DF vacío para evitar el KeyError en el filtro
+                 st.warning(f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo.")
+                 df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS) 
+                 return df_ranking
+            
         except:
              excel_exists = False
 
     if not excel_exists or df_ranking.empty:
-        # Crea un DataFrame de ejemplo
+        # Crea un DataFrame de ejemplo si el archivo no existe o falló la lectura
         data = {
             'Posicion': [1, 2, 3, 4],
             'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez', 'Pedro Lopez'],
@@ -200,7 +214,7 @@ df_atletas, initial_status = load_data()
 df_calendario = load_calendar_data()
 df_pruebas, tests_status = load_tests_data() 
 df_perfiles = load_perfil_data() 
-df_ranking = load_ranking_data() # <--- CARGA DEL RANKING
+df_ranking = load_ranking_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -309,12 +323,11 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (AHORA SON 5 PESTAÑAS PARA EL ENTRENADOR)
+# Definición de pestañas (5 pestañas)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs(["📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"])
 else:
     tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs(["🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"])
-
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 1: VISTA ENTRENADOR (Solo visible para Entrenador)
@@ -330,7 +343,7 @@ if rol_actual == 'Entrenador':
             if st.button("Recargar Datos Atletas/Perfiles/Ranking", help="Recarga 'atletas_data.xlsx', 'perfiles.xlsx' y 'ranking.xlsx'."):
                 load_data.clear()
                 load_perfil_data.clear()
-                load_ranking_data.clear() # Limpia caché de ranking
+                load_ranking_data.clear()
                 st.rerun() 
         with col_recarga_pruebas:
             if st.button("Recargar Pruebas / Calendario", help="Recarga 'pruebas_activas.xlsx' y 'calendario_data.xlsx'."):
@@ -407,7 +420,6 @@ with CALENDAR_TAB:
     st.header("📅 Calendario de Pruebas y Actividades")
     st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
     
-    # Filtrar el calendario basado en el rol
     if rol_actual == 'Entrenador':
         st.subheader("Vista Completa (Entrenador)")
         st.warning("Edita el archivo 'calendario_data.xlsx' para actualizar el calendario y usar 'Sí'/'No' en la columna 'Habilitado'.")
@@ -463,7 +475,6 @@ with RANKING_TAB:
     st.dataframe(
         df_ranking, 
         use_container_width=True,
-        # Resaltar la fila del atleta actual
         column_config={
             "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
             "Oros": st.column_config.NumberColumn("🥇 Oros", format="%d"),
