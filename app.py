@@ -18,8 +18,12 @@ CALENDAR_REQUIRED_COLUMNS = ['Evento', 'Fecha', 'Detalle', 'Habilitado']
 # Archivo 3: Pruebas Activas (Modularidad de la Calculadora)
 PRUEBAS_FILE = 'pruebas_activas.xlsx'
 
-# Archivo 4: Perfiles de Atletas (NUEVO)
+# Archivo 4: Perfiles de Atletas
 PERFILES_FILE = 'perfiles.xlsx'
+
+# Archivo 5: Ranking (NUEVO)
+RANKING_FILE = 'ranking.xlsx'
+RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces', 'Puntos']
 
 # RUTA DEL LOGO
 LOGO_PATH = 'logo.png' 
@@ -128,7 +132,6 @@ def load_tests_data():
     
     return df_tests[df_tests['Visible'] == True], status_message
 
-# --- NUEVA FUNCIÓN DE CARGA DE PERFILES ---
 @st.cache_data(ttl=3600)
 def load_perfil_data():
     """Carga los datos de perfil de los atletas desde el archivo Excel. Si no existe, lo crea."""
@@ -160,13 +163,44 @@ def load_perfil_data():
 
     return df_perfil
 
+# --- NUEVA FUNCIÓN DE CARGA DE RANKING ---
+@st.cache_data(ttl=3600)
+def load_ranking_data():
+    """Carga los datos de ranking desde el archivo Excel. Si no existe, lo crea."""
+    df_ranking = pd.DataFrame()
+    excel_exists = os.path.exists(RANKING_FILE)
+    
+    if excel_exists:
+        try:
+            df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
+        except:
+             excel_exists = False
+
+    if not excel_exists or df_ranking.empty:
+        # Crea un DataFrame de ejemplo
+        data = {
+            'Posicion': [1, 2, 3, 4],
+            'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez', 'Pedro Lopez'],
+            'Categoria': ['Senior', 'Junior', 'Senior', 'Junior'],
+            'Oros': [5, 2, 1, 0],
+            'Platas': [2, 3, 0, 1],
+            'Bronces': [1, 0, 1, 2],
+            'Puntos': [500, 350, 200, 150]
+        }
+        df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
+        df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
+        st.toast(f"Archivo '{RANKING_FILE}' creado con éxito.", icon="🏆")
+
+    return df_ranking
+
 
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
 df_pruebas, tests_status = load_tests_data() 
-df_perfiles = load_perfil_data() # <--- CARGA DEL NUEVO ARCHIVO
+df_perfiles = load_perfil_data() 
+df_ranking = load_ranking_data() # <--- CARGA DEL RANKING
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -275,11 +309,12 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (AÑADIMOS LA PESTAÑA PERFIL)
+# Definición de pestañas (AHORA SON 5 PESTAÑAS PARA EL ENTRENADOR)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB = st.tabs(["📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil"])
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs(["📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"])
 else:
-    tab2, CALENDAR_TAB, PERFIL_TAB = st.tabs(["🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil"])
+    tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs(["🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"])
+
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 1: VISTA ENTRENADOR (Solo visible para Entrenador)
@@ -292,9 +327,10 @@ if rol_actual == 'Entrenador':
         # Botones de recarga
         col_recarga_atletas, col_recarga_pruebas = st.columns(2)
         with col_recarga_atletas:
-            if st.button("Recargar Datos de Atletas / Perfiles", help="Recarga 'atletas_data.xlsx' y 'perfiles.xlsx'."):
+            if st.button("Recargar Datos Atletas/Perfiles/Ranking", help="Recarga 'atletas_data.xlsx', 'perfiles.xlsx' y 'ranking.xlsx'."):
                 load_data.clear()
                 load_perfil_data.clear()
+                load_ranking_data.clear() # Limpia caché de ranking
                 st.rerun() 
         with col_recarga_pruebas:
             if st.button("Recargar Pruebas / Calendario", help="Recarga 'pruebas_activas.xlsx' y 'calendario_data.xlsx'."):
@@ -389,7 +425,6 @@ with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
     st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
 
-    # Obtener los datos del atleta logueado
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
 
     if not datos_perfil.empty:
@@ -397,11 +432,9 @@ with PERFIL_TAB:
 
         st.subheader("Información Personal")
         
-        # Mostrar los datos en dos columnas para mejor diseño
         cols = st.columns(2)
         
         for i, (key, value) in enumerate(perfil.items()):
-            # Formatear la Fecha de Nacimiento
             if key.lower() == 'fecha_nacimiento' and pd.notna(value):
                 value_display = value.strftime('%Y-%m-%d') if isinstance(value, pd.Timestamp) else str(value)
             else:
@@ -413,11 +446,48 @@ with PERFIL_TAB:
     else:
         st.warning(f"No se encontró información de perfil para **{atleta_actual}** en el archivo {PERFILES_FILE}. Por favor, verifique el Excel.")
 
-    # Opción para el Entrenador (vista de gestión simple)
     if rol_actual == 'Entrenador':
         st.markdown("---")
         st.subheader("Gestión de Perfiles (Vista Entrenador)")
         st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
         st.dataframe(df_perfiles, use_container_width=True)
+
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 5: RANKING (Visible para todos)
+# ----------------------------------------------------------------------------------
+with RANKING_TAB:
+    st.header("🏆 Ranking de Atletas")
+    st.caption(f"Archivo de origen: **{RANKING_FILE}**")
+    
+    st.dataframe(
+        df_ranking, 
+        use_container_width=True,
+        # Resaltar la fila del atleta actual
+        column_config={
+            "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
+            "Oros": st.column_config.NumberColumn("🥇 Oros", format="%d"),
+            "Platas": st.column_config.NumberColumn("🥈 Platas", format="%d"),
+            "Bronces": st.column_config.NumberColumn("🥉 Bronces", format="%d"),
+            "Puntos": st.column_config.NumberColumn("Puntos", format="%d"),
+        },
+        height=35 * (len(df_ranking) + 1)
+    )
+
+    # Mostrar la posición del atleta actual de forma destacada
+    current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
+    if not current_athlete_rank.empty:
+        rank_data = current_athlete_rank.iloc[0]
+        st.markdown("---")
+        st.subheader(f"Tu Posición Actual: {atleta_actual}")
+        
+        col_rank, col_points, col_medals = st.columns(3)
+        
+        col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
+        col_points.metric("Puntos Totales", f"{int(rank_data['Puntos'])} pts")
+        
+        medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
+        col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
+
 
 # --- FIN DEL CÓDIGO ---
