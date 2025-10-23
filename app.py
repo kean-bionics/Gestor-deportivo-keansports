@@ -182,7 +182,6 @@ def load_ranking_data():
             
             missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
             if missing_cols:
-                 # Si faltan columnas, se devuelve un DF vacío para evitar el KeyError en el filtro
                  st.warning(f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo.")
                  df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS) 
                  return df_ranking
@@ -370,15 +369,17 @@ calc_tab = tab2
 with calc_tab:
     st.header("🧮 Calculadora de Carga por Porcentaje (%) de RM")
     
+    # Obtener datos del usuario logueado
     datos_usuario = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0]
     
     st.write(f"**Hola, {atleta_actual}. Selecciona un ejercicio para cargar tu RM registrado.**")
 
     ejercicio_options = df_pruebas['NombrePrueba'].tolist()
     
+    # Lógica de carga del RM y selección de ejercicio
     if not ejercicio_options:
         st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
-        rm_manual = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
+        rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
     else:
         ejercicio_default = st.selectbox(
             "Selecciona el Ejercicio:",
@@ -388,7 +389,6 @@ with calc_tab:
         
         rm_inicial = 0.0
         columna_rm = None
-        
         columna_rm_series = df_pruebas[df_pruebas['NombrePrueba'] == ejercicio_default]['ColumnaRM']
         if not columna_rm_series.empty:
             columna_rm = columna_rm_series.iloc[0]
@@ -396,7 +396,7 @@ with calc_tab:
         if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
             rm_inicial = float(datos_usuario[columna_rm]) 
         
-        rm_manual = st.number_input(
+        rm_value = st.number_input(
             f"RM actual para **{ejercicio_default}** (en kg):",
             min_value=0.0,
             value=rm_inicial,
@@ -404,14 +404,42 @@ with calc_tab:
         )
     
     st.markdown("---")
-    st.subheader("Pesos a utilizar según el porcentaje:")
+    st.subheader("Calculadora de Carga Dinámica")
+
+    # --- CAMBIO CLAVE: Un único Slider para el Porcentaje ---
+    porcentaje_input = st.slider(
+        "Selecciona el Porcentaje (%) de tu RM que deseas calcular:",
+        min_value=0,
+        max_value=100,
+        value=75, # Valor por defecto
+        step=1
+    )
     
-    cols = st.columns(3)
-    porcentajes = [60, 65, 70, 75, 80, 85, 90, 95, 100]
+    peso_calculado = calcular_porcentaje_rm(rm_value, porcentaje_input)
     
-    for i, porcentaje in enumerate(porcentajes):
-        peso = calcular_porcentaje_rm(rm_manual, porcentaje)
-        cols[i % 3].metric(f"{porcentaje}% de RM", f"{peso} kg")
+    st.markdown("---")
+    
+    # Mostrar el resultado en un metric grande
+    col_metric, col_spacer = st.columns([1, 2])
+    with col_metric:
+        st.metric(f"Peso Requerido al {porcentaje_input}% de RM", f"**{peso_calculado} kg**")
+    
+    st.caption("Nota: El peso se redondea al 0.5 kg más cercano (placa de 1.25 kg).")
+    
+    # --- IDEA 2: GUÍA RPE/RIR PARA ATLETAS DE COMBATE (NUEVO) ---
+    st.markdown("---")
+    st.subheader("Guía de Intensidad (RPE / RIR) para Entrenamiento")
+    st.caption("Usa esta tabla para seleccionar el porcentaje de carga adecuado según el nivel de esfuerzo que busques. (RIR: Repeticiones en Reserva; RPE: Escala de 1-10).")
+
+    rpe_guide = pd.DataFrame({
+        'RIR': [4, 3, 2, 1, 0],
+        'RPE': [6, 7, 8, 9, 10],
+        'Esfuerzo': ['Calentamiento / Técnica (Fácil)', 'Medio (Buena Velocidad)', 'Cerca del fallo (Lento)', 'Máximo posible (Muy Lento)', 'Fallo (Sin repeticiones extra)'],
+        'Carga Sugerida': ['65% - 75%', '70% - 80%', '80% - 87%', '87% - 95%', '90% +']
+    })
+    
+    st.table(rpe_guide.set_index('RIR'))
+    # -----------------------------------------------------------
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 3: CALENDARIO (Visible para todos)
