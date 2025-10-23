@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import io
-from PIL import Image # <--- AÑADE ESTA LÍNEA
+from PIL import Image
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -18,11 +18,11 @@ CALENDAR_REQUIRED_COLUMNS = ['Evento', 'Fecha', 'Detalle', 'Habilitado']
 # Archivo 3: Pruebas Activas (Modularidad de la Calculadora)
 PRUEBAS_FILE = 'pruebas_activas.xlsx'
 
-# --- RUTA DEL LOGO (NUEVO) ---
+# RUTA DEL LOGO
 LOGO_PATH = 'logo.png' 
 
 
-# --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ Y SIN ST.CALLS INTERNOS) ---
+# --- 2. FUNCIONES DE CARGA DE DATOS (SIN LLAMADAS A ST.XYZ INTERNAS) ---
 
 @st.cache_data(ttl=3600) 
 def load_data():
@@ -71,7 +71,7 @@ def load_data():
 
     return df, status_message 
 
-@st.cache_data(ttl=600) # Carga cada 10 minutos
+@st.cache_data(ttl=600)
 def load_calendar_data():
     """Carga los datos del calendario desde el archivo Excel. Si no existe, lo crea."""
     calendar_df = pd.DataFrame()
@@ -94,7 +94,6 @@ def load_calendar_data():
         calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
         calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
 
-    # Limpieza: Convertir 'Habilitado' a booleano y filtrar por 'sí'
     if 'Habilitado' in calendar_df.columns:
         calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
 
@@ -122,17 +121,17 @@ def load_tests_data():
         status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
         return pd.DataFrame(), status_message 
 
-    # Filtrar solo pruebas visibles (donde 'Visible' es 'Sí')
     df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip() == 'sí'
     
     return df_tests[df_tests['Visible'] == True], status_message
 
 
-# --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
+# --- 3. CARGA DE DATOS AL INICIO DE LA APP ---
 
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
 df_pruebas, tests_status = load_tests_data() 
+
 
 # --- 4. FUNCIONES AUXILIARES ---
 
@@ -146,9 +145,10 @@ def check_login(username, password):
     return False, None, None
 
 def login_form():
-    """Muestra el formulario de inicio de sesión."""
-    st.sidebar.header("🔑 Iniciar Sesión")
-    with st.sidebar.form("login_form"):
+    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app (NO en sidebar)."""
+    # NO se usa st.sidebar.header aquí
+    st.markdown("---")
+    with st.form("login_form"):
         username = st.text_input("Usuario (Nombre del Atleta)")
         password = st.text_input("Contraseña", type="password")
         submitted = st.form_submit_button("Entrar")
@@ -183,7 +183,7 @@ def calcular_porcentaje_rm(rm_value, porcentaje):
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
-# Muestra los mensajes de estado inicial (soluciona el error de caché)
+# Muestra los mensajes de estado inicial 
 st.toast(initial_status, icon="📝")
 if tests_status:
     st.toast(tests_status, icon="🛠️")
@@ -192,24 +192,34 @@ if tests_status:
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- PANTALLA DE ACCESO/BIENVENIDA (MODIFICADA) ---
+# ----------------------------------------------------------------------
+# --- PANTALLA DE ACCESO/BIENVENIDA (CENTRALIZADA) ---
+# ----------------------------------------------------------------------
 if not st.session_state['logged_in']:
-    st.image(LOGO_PATH, width=200) # Muestra el logo
-    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>¡Bienvenido al Gestor de Rendimiento!</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; font-size: 1.2em;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", unsafe_allow_html=True)
-    st.markdown("---") # Separador visual
-
-    st.info("Por favor, inicia sesión para acceder a la aplicación.")
-    login_form()
+    
+    # Creamos 3 columnas: [Espaciador izquierdo (1), Columna central para el contenido (2), Espaciador derecho (1)]
+    col1, col2, col3 = st.columns([1, 2, 1]) 
+    
+    with col2: # Todo el contenido se centra en la columna del medio
+        st.image(LOGO_PATH, width=200) 
+        st.markdown("<h1 style='text-align: center; color: #4CAF50;'>¡Bienvenido al Gestor de Rendimiento!</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; font-size: 1.2em;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", unsafe_allow_html=True)
+        
+        st.info("Por favor, inicia sesión para acceder a la aplicación.")
+        login_form() # El formulario ahora se muestra aquí, centrado.
+        
     st.stop()
     
-# Si hay sesión iniciada
-st.title("💪 Gestión deportiva HAPKIDO")
+# ----------------------------------------------------------------------
+# --- CONTENIDO DE LA APLICACIÓN (POST-LOGIN) ---
+# ----------------------------------------------------------------------
+
+st.title("💪 RM & Rendimiento Manager")
 logout() 
 
-# --- MOSTRAR LOGO EN SIDEBAR DESPUÉS DEL LOGIN (NUEVO) ---
-if st.session_state['logged_in']: # Solo si está logueado
-    st.sidebar.image(LOGO_PATH, width=100) # Un logo más pequeño en la sidebar
+# Mostrar logo en la sidebar después del login
+if st.session_state['logged_in']:
+    st.sidebar.image(LOGO_PATH, width=100)
     st.sidebar.markdown("---")
 
 rol_actual = st.session_state['rol']
@@ -233,7 +243,7 @@ if rol_actual == 'Entrenador':
         col_recarga_atletas, col_recarga_pruebas = st.columns(2)
         with col_recarga_atletas:
             if st.button("Recargar Datos de Atletas", help="Recarga el archivo 'atletas_data.xlsx'."):
-                load_data.clear() # Limpia la caché de atletas
+                load_data.clear()
                 st.rerun() 
         with col_recarga_pruebas:
             if st.button("Recargar Pruebas / Calendario", help="Recarga 'pruebas_activas.xlsx' y 'calendario_data.xlsx'."):
@@ -265,10 +275,8 @@ with calc_tab:
     
     st.write(f"**Hola, {atleta_actual}. Selecciona un ejercicio para cargar tu RM registrado.**")
 
-    # Usamos la lista de pruebas activas cargadas
     ejercicio_options = df_pruebas['NombrePrueba'].tolist()
     
-    # Manejamos el caso de que no haya pruebas visibles
     if not ejercicio_options:
         st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
         rm_manual = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
@@ -282,12 +290,10 @@ with calc_tab:
         rm_inicial = 0.0
         columna_rm = None
         
-        # Obtener el nombre de la columna RM asociado al ejercicio
         columna_rm_series = df_pruebas[df_pruebas['NombrePrueba'] == ejercicio_default]['ColumnaRM']
         if not columna_rm_series.empty:
             columna_rm = columna_rm_series.iloc[0]
         
-        # Intenta obtener el valor del XLSX de Atletas
         if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
             rm_inicial = float(datos_usuario[columna_rm]) 
         
