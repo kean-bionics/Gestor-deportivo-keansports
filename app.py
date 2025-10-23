@@ -243,8 +243,8 @@ def load_readiness_data():
 
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
-df_pruebas_full, tests_status = load_tests_data() # Carga el DF COMPLETO para edición
-df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() # Filtra solo las visibles para la calculadora
+df_pruebas_full, tests_status = load_tests_data() 
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
@@ -340,16 +340,28 @@ def descomponer_placas(peso_total, peso_barra):
     return peso_cargado_total, placas_por_lado
 
 def save_main_data(df_edited):
-    """Guarda el DataFrame editado de atletas en el archivo XLSX."""
+    """Guarda el DataFrame editado de atletas en el archivo XLSX, forzando Última_Fecha al final."""
     try:
-        # Aseguramos que la columna 'Última_Fecha' sea un tipo compatible antes de guardar (ej. str o datetime)
+        # 1. Limpieza y preparación
+        df_edited.columns = df_edited.columns.str.strip()
+        df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
+
+        # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
         if 'Última_Fecha' in df_edited.columns:
             df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
         
-        # 1. Sobrescribir el archivo Excel
-        df_edited.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
+        # 2. Reordenamiento CLAVE de columnas para dejar 'Última_Fecha' al final
+        cols = df_edited.columns.tolist()
+        if 'Última_Fecha' in cols:
+            cols.remove('Última_Fecha')
+            cols.append('Última_Fecha')
         
-        # 2. Limpiar la caché de los datos principales
+        df_to_save = df_edited[cols].copy()
+        
+        # 3. Sobrescribir el archivo Excel
+        df_to_save.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
+        
+        # 4. Limpiar la caché de los datos principales
         load_data.clear()
         
         return True
@@ -393,7 +405,7 @@ def save_tests_data(df_edited):
     # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
     df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
     
-    # Aseguramos que solo se guardan las columnas requeridas (por si se añade una columna temporal)
+    # Aseguramos que solo se guardan las columnas requeridas
     df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
     
     try:
@@ -509,7 +521,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("⚠️ **Advertencia**: Los cambios hechos aquí sobrescribirán el archivo **atletas_data.xlsx**. Asegúrate de mantener la columna 'Atleta' única y las 'Contraseña' seguras. Puedes añadir o eliminar filas. Para **nuevas pruebas RM**, simplemente agrega una nueva columna con su nombre (Ej: `Biceps_RM`).")
+        st.warning("⚠️ **Advertencia**: Los cambios hechos aquí sobrescribirán el archivo **atletas_data.xlsx**. Puedes **añadir nuevas columnas (pruebas RM) y serán guardadas.**")
 
         df_editor_main = df_atletas.copy()
         
@@ -518,12 +530,10 @@ if rol_actual == 'Entrenador':
             df_editor_main, 
             num_rows="dynamic",
             column_config={
-                # ID no editable para evitar que el usuario lo cambie, se puede auto-asignar
                 "ID": st.column_config.NumberColumn("ID", disabled=True), 
                 "Atleta": st.column_config.TextColumn("Atleta", help="Nombre único del atleta y Usuario de Login", required=True),
                 "Contraseña": st.column_config.TextColumn("Contraseña", required=True),
                 "Rol": st.column_config.SelectboxColumn("Rol", options=['Atleta', 'Entrenador']),
-                # Configurar RM columns con formatos numéricos
                 "Sentadilla_RM": st.column_config.NumberColumn("Sentadilla_RM (kg)", format="%.1f"),
                 "PressBanca_RM": st.column_config.NumberColumn("PressBanca_RM (kg)", format="%.1f"),
                 "PesoCorporal": st.column_config.NumberColumn("PesoCorporal (kg)", format="%.1f"),
@@ -538,24 +548,22 @@ if rol_actual == 'Entrenador':
         if st.button("💾 Guardar Cambios en Datos de Atletas y Aplicar", type="primary", key="save_main_data_btn"):
             # Lógica para rellenar IDs faltantes antes de guardar (importante para nuevos atletas)
             if 'ID' in df_edited_main.columns:
-                # Encuentra el ID máximo actual (excluyendo NaNs)
                 max_id = df_edited_main['ID'].dropna().max()
                 if pd.isna(max_id): max_id = 0
                 
-                # Rellenar ID solo si es NaN o None
                 for index, row in df_edited_main.iterrows():
                     if pd.isna(row['ID']):
                         max_id += 1
                         df_edited_main.loc[index, 'ID'] = max_id
                         
-            # Asegurar que las columnas requeridas (al menos Atleta y Contraseña) no sean nulas después de la edición.
+            # Asegurar que las columnas requeridas no sean nulas 
             df_edited_cleaned_main = df_edited_main.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
             if save_main_data(df_edited_cleaned_main):
                 st.success("✅ Datos de Atletas actualizados y guardados con éxito. Recargando aplicación...")
                 st.rerun()
             else:
-                st.error("❌ No se pudieron guardar los cambios en los datos de atletas.")
+                st.error("❌ No se pudieron guardar los datos de atletas.")
 
         st.markdown("---")
         st.subheader("2. Gestión de Pruebas (Modularidad de la Calculadora)")
@@ -582,7 +590,6 @@ if rol_actual == 'Entrenador':
 
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="secondary", key="save_tests_data_btn"):
-            # Asegurarse de que no haya filas completamente vacías
             df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
             if save_tests_data(df_edited_cleaned):
@@ -590,7 +597,6 @@ if rol_actual == 'Entrenador':
                 st.rerun()
             else:
                 st.error("❌ No se pudieron guardar los cambios.")
-        # --- FIN IMPLEMENTACIÓN CLAVE ---
     
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 2: CALCULADORA DE CARGA (Visible para todos)
@@ -813,7 +819,6 @@ with BIENESTAR_TAB:
 
     st.subheader("Registro Diario")
     
-    # Usamos una clave de sesión para almacenar el DF de bienestar actualizado
     if 'df_readiness_display' not in st.session_state:
         st.session_state['df_readiness_display'] = df_readiness.copy()
 
