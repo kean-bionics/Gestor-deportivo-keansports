@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import io
+from PIL import Image # <--- AÑADE ESTA LÍNEA
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -16,6 +17,9 @@ CALENDAR_REQUIRED_COLUMNS = ['Evento', 'Fecha', 'Detalle', 'Habilitado']
 
 # Archivo 3: Pruebas Activas (Modularidad de la Calculadora)
 PRUEBAS_FILE = 'pruebas_activas.xlsx'
+
+# --- RUTA DEL LOGO (NUEVO) ---
+LOGO_PATH = 'logo.png' 
 
 
 # --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ Y SIN ST.CALLS INTERNOS) ---
@@ -188,16 +192,25 @@ if tests_status:
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# CONTROL DE ACCESO
+# --- PANTALLA DE ACCESO/BIENVENIDA (MODIFICADA) ---
 if not st.session_state['logged_in']:
-    st.title("💪 RM & Rendimiento Manager - Acceso")
-    st.info("Por favor, inicia sesión para acceder a la aplicación. Usa 'Tu Nombre' y 'admin' para entrar como Entrenador.")
+    st.image(LOGO_PATH, width=200) # Muestra el logo
+    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>¡Bienvenido al Gestor de Rendimiento!</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; font-size: 1.2em;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", unsafe_allow_html=True)
+    st.markdown("---") # Separador visual
+
+    st.info("Por favor, inicia sesión para acceder a la aplicación.")
     login_form()
     st.stop()
     
 # Si hay sesión iniciada
-st.title("💪 RM & Rendimiento Manager")
-logout()
+st.title("💪 Gestión deportiva HAPKIDO")
+logout() 
+
+# --- MOSTRAR LOGO EN SIDEBAR DESPUÉS DEL LOGIN (NUEVO) ---
+if st.session_state['logged_in']: # Solo si está logueado
+    st.sidebar.image(LOGO_PATH, width=100) # Un logo más pequeño en la sidebar
+    st.sidebar.markdown("---")
 
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
