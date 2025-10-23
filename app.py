@@ -521,7 +521,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("⚠️ **Advertencia**: Los cambios hechos aquí sobrescribirán el archivo **atletas_data.xlsx**. Puedes **añadir nuevas columnas (pruebas RM) y serán guardadas.**")
+        st.warning("⚠️ **Advertencia**: Puedes **añadir nuevas pruebas RM** simplemente escribiendo en el encabezado vacío a la derecha. La columna 'Última_Fecha' siempre se moverá al final al guardar.")
 
         df_editor_main = df_atletas.copy()
         
@@ -537,7 +537,12 @@ if rol_actual == 'Entrenador':
                 "Sentadilla_RM": st.column_config.NumberColumn("Sentadilla_RM (kg)", format="%.1f"),
                 "PressBanca_RM": st.column_config.NumberColumn("PressBanca_RM (kg)", format="%.1f"),
                 "PesoCorporal": st.column_config.NumberColumn("PesoCorporal (kg)", format="%.1f"),
-                "Última_Fecha": st.column_config.DateColumn("Última_Fecha")
+                "Última_Fecha": st.column_config.DateColumn("Última_Fecha"),
+                # --- SOLUCIÓN CLAVE: FORZAR COLUMNA DE ADICIÓN ---
+                "__add__": st.column_config.Column(
+                    "➕ Nueva Prueba (Columna)", 
+                    width="small",
+                ),
                 
             },
             use_container_width=True,
@@ -571,7 +576,7 @@ if rol_actual == 'Entrenador':
         
         # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE CORREGIDA (Pruebas) ---
         
-        # 1. Widget de edición (usa el DF completo)
+        # 1. Widget de edición
         df_edited = st.data_editor(
             df_pruebas_full, # Usamos el DF COMPLETO
             num_rows="dynamic", # Permite añadir y eliminar filas
