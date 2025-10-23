@@ -259,6 +259,35 @@ def calcular_porcentaje_rm(rm_value, porcentaje):
         return round(peso * 2) / 2
     return 0
 
+# --- NUEVA FUNCIÓN PARA DESCOMPONER EL PESO EN PLACAS ---
+def descomponer_placas(peso_total, peso_barra):
+    """Calcula las placas necesarias por lado para un peso total dado."""
+    if peso_total <= peso_barra or peso_barra < 0:
+        return "Barra Sola o Peso Inválido", {}
+
+    peso_a_cargar = (peso_total - peso_barra) / 2
+    # Placas estándar (incluyendo 0.5 kg)
+    placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5] 
+    placas_por_lado = {}
+
+    peso_restante = peso_a_cargar
+    
+    for placa in placas_disponibles:
+        if peso_restante >= (placa - 0.01): # Usamos -0.01 para manejar imprecisiones
+            cantidad = int(peso_restante // placa)
+            if cantidad > 0:
+                placas_por_lado[placa] = cantidad
+                peso_restante -= (cantidad * placa)
+            
+            # Ajuste de redondeo final para evitar errores de coma flotante
+            if peso_restante < 0.1: 
+                peso_restante = 0
+                break
+    
+    peso_cargado_total = peso_barra + (sum(p * c for p, c in placas_por_lado.items()) * 2)
+
+    return peso_cargado_total, placas_por_lado
+
 
 # --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
 
@@ -374,73 +403,118 @@ with calc_tab:
     
     st.write(f"**Hola, {atleta_actual}. Selecciona un ejercicio para cargar tu RM registrado.**")
 
-    ejercicio_options = df_pruebas['NombrePrueba'].tolist()
-    
-    # Lógica de carga del RM y selección de ejercicio
-    if not ejercicio_options:
-        st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
-        rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
-    else:
-        ejercicio_default = st.selectbox(
-            "Selecciona el Ejercicio:",
-            options=ejercicio_options, 
-            key='ejercicio_calc'
-        )
+    # --- ENTRADA DE DATOS RM Y BARRA ---
+    col_ejercicio, col_barra = st.columns([2, 1])
+
+    with col_ejercicio:
+        ejercicio_options = df_pruebas['NombrePrueba'].tolist()
         
-        rm_inicial = 0.0
-        columna_rm = None
-        columna_rm_series = df_pruebas[df_pruebas['NombrePrueba'] == ejercicio_default]['ColumnaRM']
-        if not columna_rm_series.empty:
-            columna_rm = columna_rm_series.iloc[0]
-        
-        if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
-            rm_inicial = float(datos_usuario[columna_rm]) 
-        
-        rm_value = st.number_input(
-            f"RM actual para **{ejercicio_default}** (en kg):",
+        if not ejercicio_options:
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
+            rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
+        else:
+            ejercicio_default = st.selectbox(
+                "Selecciona el Ejercicio:",
+                options=ejercicio_options, 
+                key='ejercicio_calc'
+            )
+            
+            rm_inicial = 0.0
+            columna_rm = None
+            columna_rm_series = df_pruebas[df_pruebas['NombrePrueba'] == ejercicio_default]['ColumnaRM']
+            if not columna_rm_series.empty:
+                columna_rm = columna_rm_series.iloc[0]
+            
+            if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
+                rm_inicial = float(datos_usuario[columna_rm]) 
+            
+            rm_value = st.number_input(
+                f"RM actual para **{ejercicio_default}** (en kg):",
+                min_value=0.0,
+                value=rm_inicial,
+                step=5.0
+            )
+
+    # --- PESO DE BARRA MANUAL ---
+    with col_barra:
+        st.markdown("<br>", unsafe_allow_html=True) # Espaciado para alinear
+        peso_barra = st.number_input(
+            "Peso de la Barra (kg):",
             min_value=0.0,
-            value=rm_inicial,
-            step=5.0
+            value=20.0, # Valor por defecto
+            step=2.5,
+            key='peso_barra_input'
         )
-    
+
     st.markdown("---")
     st.subheader("Calculadora de Carga Dinámica")
 
-    # --- CAMBIO CLAVE: Un único Slider para el Porcentaje ---
+    # --- ÚNICO SLIDER DE PORCENTAJE ---
     porcentaje_input = st.slider(
         "Selecciona el Porcentaje (%) de tu RM que deseas calcular:",
         min_value=0,
         max_value=100,
-        value=75, # Valor por defecto
+        value=75,
         step=1
     )
     
     peso_calculado = calcular_porcentaje_rm(rm_value, porcentaje_input)
     
-    st.markdown("---")
+    # --- RESULTADOS Y CONVERSIÓN DE PLACAS ---
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col_metric, col_placas = st.columns([1, 1])
     
-    # Mostrar el resultado en un metric grande
-    col_metric, col_spacer = st.columns([1, 2])
+    # 1. Métrica Principal
     with col_metric:
         st.metric(f"Peso Requerido al {porcentaje_input}% de RM", f"**{peso_calculado} kg**")
+        st.caption("Nota: El peso se redondea al 0.5 kg más cercano.")
+
+    # 2. Conversión de Placas
+    peso_total_cargado, placas_por_lado = descomponer_placas(peso_calculado, peso_barra)
     
-    st.caption("Nota: El peso se redondea al 0.5 kg más cercano (placa de 1.25 kg).")
+    with col_placas:
+        if isinstance(peso_total_cargado, str):
+            st.warning("Peso Requerido debe ser mayor que el Peso de la Barra.")
+        else:
+            st.markdown(f"**Carga por Lado ({peso_barra} kg de barra):**")
+            placas_str = ""
+            if placas_por_lado:
+                for placa, cantidad in placas_por_lado.items():
+                    placas_str += f"- **{placa} kg**: {cantidad} placa(s) ➡️ Total: {placa * cantidad} kg/lado\n"
+                st.info(placas_str)
+            else:
+                st.success("No se requieren placas adicionales (Solo la barra).")
     
-    # --- IDEA 2: GUÍA RPE/RIR PARA ATLETAS DE COMBATE (NUEVO) ---
     st.markdown("---")
-    st.subheader("Guía de Intensidad (RPE / RIR) para Entrenamiento")
-    st.caption("Usa esta tabla para seleccionar el porcentaje de carga adecuado según el nivel de esfuerzo que busques. (RIR: Repeticiones en Reserva; RPE: Escala de 1-10).")
 
-    rpe_guide = pd.DataFrame({
-        'RIR': [4, 3, 2, 1, 0],
-        'RPE': [6, 7, 8, 9, 10],
-        'Esfuerzo': ['Calentamiento / Técnica (Fácil)', 'Medio (Buena Velocidad)', 'Cerca del fallo (Lento)', 'Máximo posible (Muy Lento)', 'Fallo (Sin repeticiones extra)'],
-        'Carga Sugerida': ['65% - 75%', '70% - 80%', '80% - 87%', '87% - 95%', '90% +']
-    })
-    
-    st.table(rpe_guide.set_index('RIR'))
-    # -----------------------------------------------------------
+    # --- GUÍA VBT Y RPE/RIR PARA COMBATE (COMBINADO EN DOS COLUMNAS) ---
 
+    col_rpe, col_vbt = st.columns(2)
+
+    with col_rpe:
+        st.subheader("Guía de Intensidad (RPE / RIR) 🥊")
+        st.caption("Usa el RPE para gestionar la fatiga, vital en deportes de combate.")
+        rpe_guide = pd.DataFrame({
+            'RIR': [4, 3, 2, 1, 0],
+            'RPE': [6, 7, 8, 9, 10],
+            'Esfuerzo': ['Calentamiento / Técnica (Fácil)', 'Medio (Buena Velocidad)', 'Cerca del fallo (Lento)', 'Máximo posible (Muy Lento)', 'Fallo (Sin repeticiones extra)'],
+            'Carga Sugerida': ['65% - 75%', '70% - 80%', '80% - 87%', '87% - 95%', '90% +']
+        })
+        st.table(rpe_guide.set_index('RIR'))
+
+    with col_vbt:
+        st.subheader("Guía de Velocidad (VBT) ⚡")
+        st.caption("Asocia el % de carga con la velocidad de ejecución para maximizar la potencia.")
+        
+        vbt_guide = pd.DataFrame({
+            '% de 1RM Típico': ['90% - 95%', '80% - 85%', '60% - 70%', '40% - 50%'],
+            'Intención': ['Fuerza Máxima', 'Fuerza-Velocidad', 'Velocidad-Fuerza', 'Técnica/Velocidad'],
+            'Velocidad Objetivo (m/s)': ['0.30 - 0.45', '0.50 - 0.70', '0.75 - 1.00', '1.00 - 1.30']
+        })
+        st.table(vbt_guide.set_index('% de 1RM Típico'))
+# ----------------------------------------------------------------------------------
+# ... (El resto de las pestañas sigue igual)
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 3: CALENDARIO (Visible para todos)
 # ----------------------------------------------------------------------------------
