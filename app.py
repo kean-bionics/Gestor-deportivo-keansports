@@ -30,7 +30,6 @@ RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas',
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
-
 # RUTA DEL LOGO
 LOGO_PATH = 'logo.png' 
 
@@ -335,15 +334,17 @@ def descomponer_placas(peso_total, peso_barra):
 
     return peso_cargado_total, placas_por_lado
 
+# --- SOLUCIÓN AL PROBLEMA DE ACTUALIZACIÓN DEL HISTORIAL DE BIENESTAR ---
 def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
-    """Añade una nueva fila al archivo readiness_data.xlsx."""
-    # Note: Global variable modification must be handled with care in Streamlit.
-    # We load the data directly here to ensure we save the absolute latest version.
+    """Añade una nueva fila al archivo readiness_data.xlsx, actualiza el archivo y el DataFrame global."""
+    
+    # 1. Cargar el DF actual (usamos la función de carga para asegurar que tengamos la data más reciente)
     try:
         current_df, _ = load_readiness_data()
+        if current_df.empty:
+             current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
     except Exception:
-        # Fallback if the load function fails entirely
-        current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
+         current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
 
     new_entry = {
         'Atleta': atleta, 
@@ -355,15 +356,22 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     
     new_df = pd.DataFrame([new_entry])
     
+    # Concatenar el registro actual y el nuevo
     df_updated = pd.concat([current_df, new_df], ignore_index=True)
     
     try:
+        # 2. Escribir de vuelta al Excel
         df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
-        load_readiness_data.clear() # Clear cache to force reload on next execution
-        return True
+        
+        # 3. Forzar la limpieza de la caché
+        load_readiness_data.clear() 
+        
+        # 4. Retornar el nuevo DataFrame cargado (para la visualización inmediata)
+        return load_readiness_data()[0], True
+        
     except Exception as e:
         st.error(f"Error al guardar los datos de bienestar: {e}")
-        return False
+        return current_df, False
 
 
 # --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
@@ -371,7 +379,6 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
 # Muestra mensajes de estado críticos (CREACIÓN o ERROR)
-# La lógica ha sido ajustada para ser más robusta y no depender de la caché para mostrar los mensajes.
 if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
     st.toast(initial_status, icon="📝")
 if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
@@ -521,7 +528,7 @@ with calc_tab:
             )
 
     with col_barra:
-        st.markdown(" ", unsafe_allow_html=True) # Espaciado para alinear
+        st.markdown(" ", unsafe_allow_html=True)
         peso_barra = st.number_input(
             "Peso de la Barra (kg):",
             min_value=0.0,
@@ -690,6 +697,10 @@ with BIENESTAR_TAB:
 
     st.subheader("Registro Diario")
     
+    # Usamos una clave de sesión para almacenar el DF de bienestar actualizado
+    if 'df_readiness_display' not in st.session_state:
+        st.session_state['df_readiness_display'] = df_readiness.copy()
+
     with st.form("readiness_form", clear_on_submit=True):
         fecha_registro = st.date_input("Fecha de Registro:", datetime.now().date())
         
@@ -707,21 +718,23 @@ with BIENESTAR_TAB:
         submitted = st.form_submit_button("Guardar Registro Diario")
         
         if submitted:
-            # La función save_readiness_data ahora usa load_readiness_data para cargar el df más reciente
-            if save_readiness_data(atleta_actual, fecha_registro, sueno, molestias, disposicion):
-                st.success("¡Registro de bienestar guardado exitosamente!")
-                # La recarga se maneja dentro de save_readiness_data. No necesitamos st.rerun() aquí
+            # 1. Guardar y capturar el nuevo DataFrame
+            updated_df, success = save_readiness_data(atleta_actual, fecha_registro, sueno, molestias, disposicion)
+            
+            if success:
+                st.success("¡Registro de bienestar guardado exitosamente! Actualizando historial...")
+                # 2. Actualizar la variable de sesión para mostrar inmediatamente
+                st.session_state['df_readiness_display'] = updated_df
             
 
     st.markdown("---")
     st.subheader("Historial de Bienestar")
 
-    df_atleta_readiness = df_readiness[df_readiness['Atleta'] == atleta_actual].sort_values(by='Fecha', ascending=False)
+    df_atleta_readiness = st.session_state['df_readiness_display'][st.session_state['df_readiness_display']['Atleta'] == atleta_actual].sort_values(by='Fecha', ascending=False)
     
     if df_atleta_readiness.empty:
         st.info("No tienes registros de bienestar aún.")
     else:
-        # Se elimina st.column_config.Progress para compatibilidad
         st.dataframe(
             df_atleta_readiness[['Fecha', 'Sueño', 'Molestias', 'Disposicion']].head(10), 
             use_container_width=True
@@ -730,7 +743,7 @@ with BIENESTAR_TAB:
         if rol_actual == 'Entrenador':
             st.markdown("---")
             st.subheader("Datos Crudos (Vista Entrenador)")
-            st.dataframe(df_readiness, use_container_width=True)
+            st.dataframe(st.session_state['df_readiness_display'], use_container_width=True)
 
 
 # ----------------------------------------------------------------------------------
