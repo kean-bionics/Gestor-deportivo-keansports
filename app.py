@@ -484,6 +484,26 @@ def save_calendar_data(df_edited):
         st.error(f"Error al guardar el calendario: {e}")
         return False
 
+def save_ranking_data(df_edited):
+    """Guarda el DataFrame editado del ranking, recalculando y ordenando primero."""
+    
+    # 1. Limpiar filas vacías
+    df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
+    
+    # 2. Calcular puntos y ordenar (la lógica clave)
+    df_sorted = calculate_and_sort_ranking(df_cleaned)
+
+    # 3. Guardar solo las columnas requeridas
+    df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS]
+    
+    try:
+        df_to_save.to_excel(RANKING_FILE, index=False, engine='openpyxl')
+        load_ranking_data.clear() 
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el ranking: {e}")
+        return False
+
 # --- NUEVAS FUNCIONES PARA EL RESALTADO ---
 
 def get_days_until(date_obj):
