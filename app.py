@@ -356,7 +356,9 @@ def save_main_data(df_edited):
             cols.remove('Última_Fecha')
             cols.append('Última_Fecha')
         
-        df_to_save = df_edited[cols].copy()
+        # Guardar solo las columnas que tienen datos (filtrar NaNs de los encabezados)
+        valid_cols = [col for col in cols if not pd.isna(df_edited[col]).all()]
+        df_to_save = df_edited[valid_cols].copy()
         
         # 3. Sobrescribir el archivo Excel
         df_to_save.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
@@ -405,7 +407,7 @@ def save_tests_data(df_edited):
     # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
     df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
     
-    # Aseguramos que solo se guardan las columnas requeridas
+    # Aseguramos que solo se guarden las columnas requeridas
     df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
     
     try:
