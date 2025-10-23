@@ -211,8 +211,8 @@ def load_ranking_data():
             'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez', 'Pedro Lopez'],
             'Categoria': ['Senior', 'Junior', 'Senior', 'Junior'],
             'Oros': [5, 2, 1, 0],
-            'Platas': [2, 3, 0, 0],
-            'Bronces': [1, 0, 1, 0],
+            'Platas': [2, 3, 0, 1],
+            'Bronces': [1, 0, 1, 2],
             'Puntos': [500, 350, 200, 150]
         }
         df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
@@ -462,11 +462,10 @@ def save_calendar_data(df_edited):
 def get_days_until(date_obj):
     """Calcula los días restantes hasta una fecha, o un gran número si ya pasó."""
     today = datetime.now().date()
-    # Asegurar que date_obj sea un objeto date, no datetime
+    # Asegurar que date_obj sea un objeto date
     if isinstance(date_obj, datetime):
         date_obj = date_obj.date()
         
-    # Manejar NaT (Not a Time) o pd.NaT que puede venir de la columna Fecha
     if pd.isna(date_obj) or date_obj is None:
         return 999
         
@@ -476,25 +475,23 @@ def get_days_until(date_obj):
 def highlight_imminent_events(df):
     """Aplica estilo de fondo a filas con eventos a menos de 5 días."""
     
-    # 1. Crear una columna temporal con los días restantes
-    df['Days_Until'] = df['Fecha'].apply(get_days_until)
-    
-    # 2. Máscara booleana: True si es inminente (0 a 5 días)
-    # Excluye eventos que ya pasaron (< 0)
+    # La columna 'Days_Until' se calcula en el bloque principal y es necesaria en este DF
+    if 'Days_Until' not in df.columns:
+        return pd.DataFrame('', index=df.index, columns=df.columns)
+        
+    # Máscara booleana: True si es inminente (0 a 5 días)
     mask = (df['Days_Until'] >= 0) & (df['Days_Until'] <= 5)
     
-    # 3. Crear DataFrame de estilos
+    # Crear DataFrame de estilos
     styles = pd.DataFrame('', index=df.index, columns=df.columns)
     
-    # 4. Aplicar estilo: fondo verde claro de 'success'
+    # Aplicar estilo: fondo verde claro de 'success'
     styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;' 
-    
-    # 5. La columna 'Days_Until' se usa solo para el cálculo, no se retorna
-    df.drop(columns=['Days_Until'], inplace=True) 
     
     return styles
 
 # -------------------------------------------
+
 
 # --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
 
@@ -524,9 +521,7 @@ if not st.session_state['logged_in']:
     
     logo_col, spacer_col = st.columns([1, 10])
     with logo_col:
-        # Asegúrate de que tienes un archivo 'logo.png' o reemplaza esto
-        # st.image(LOGO_PATH, width=120) 
-        st.title("💪")
+        st.image(LOGO_PATH, width=120) 
     
     st.markdown("---") 
 
@@ -557,7 +552,7 @@ st.title("💪 RM & Rendimiento Manager")
 logout() 
 
 if st.session_state['logged_in']:
-    # st.sidebar.image(LOGO_PATH, width=100) # Reemplazar con tu logo si existe
+    st.sidebar.image(LOGO_PATH, width=100)
     st.sidebar.markdown("---")
 
 rol_actual = st.session_state['rol']
@@ -574,10 +569,9 @@ else:
     ])
 
 # ----------------------------------------------------------------------------------
-## NOTIFICACIÓN GLOBAL DE EVENTOS INMINENTES (Corre al cargar la aplicación logueada)
+## NOTIFICACIÓN GLOBAL DE EVENTOS INMINENTES
 # ----------------------------------------------------------------------------------
 
-# Se usa df_calendario, que ya está filtrado por 'Habilitado=True'
 df_imminent = df_calendario.copy()
 df_imminent['Days_Until'] = df_imminent['Fecha'].apply(get_days_until)
 df_imminent = df_imminent[(df_imminent['Days_Until'] >= 0) & (df_imminent['Days_Until'] <= 5)]
@@ -899,21 +893,26 @@ with CALENDAR_TAB:
         
         st.markdown("---")
         st.subheader(f"Vista del Atleta")
-        eventos_mostrar = df_calendario # Usamos el DF ya filtrado globalmente
+        eventos_mostrar = df_calendario.copy() # Usamos el DF ya filtrado globalmente
         
     else:
         st.subheader(f"Próximos Eventos Habilitados para {atleta_actual}")
-        eventos_mostrar = df_calendario
+        eventos_mostrar = df_calendario.copy()
     
-    # Muestra la versión filtrada/actualizada con el resaltado
-    if eventos_mostrar.empty:
-        st.info("No hay eventos habilitados para mostrar.")
-    else:
-        # Aplicar el estilo de resaltado condicional
+    # --- LÓGICA DE RESALTADO (Fuera de la función de estilo) ---
+    if not eventos_mostrar.empty:
+        # Calcular la columna temporal Days_Until
+        eventos_mostrar['Days_Until'] = eventos_mostrar['Fecha'].apply(get_days_until)
+        
+        # Aplicar el estilo condicional (y se muestra la columna Days_Until)
         st.dataframe(
             eventos_mostrar.style.apply(highlight_imminent_events, axis=None), 
             use_container_width=True
         )
+        
+    else:
+        st.info("No hay eventos habilitados para mostrar.")
+
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 4: PERFIL (Visible para todos)
