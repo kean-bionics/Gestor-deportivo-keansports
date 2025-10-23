@@ -902,7 +902,7 @@ with CALENDAR_TAB:
     # --- LÓGICA DE RESALTADO (Fuera de la función de estilo) ---
     if not eventos_mostrar.empty:
         # Calcular la columna temporal Days_Until
-        eventos_mostrar['Days_Until'] = eventos_mostrar['Fecha'].apply(get_days_until)
+        eventos_mostrar['Días restantes'] = eventos_mostrar['Fecha'].apply(get_days_until)
         
         # Aplicar el estilo condicional (y se muestra la columna Days_Until)
         st.dataframe(
