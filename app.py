@@ -79,6 +79,11 @@ def load_data():
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
 
+    # --- SOLUCIÓN CLAVE: AÑADIR UNA COLUMNA TEMPORAL VISIBLE ---
+    # Esto asegura que siempre haya un espacio visible para la edición de nuevas pruebas.
+    if 'Nueva_Prueba' not in df.columns:
+        df['Nueva_Prueba'] = None
+    
     return df, status_message 
 
 @st.cache_data(ttl=600)
@@ -523,7 +528,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("⚠️ **Advertencia**: Puedes **añadir nuevas pruebas RM** simplemente escribiendo en el encabezado vacío a la derecha. La columna 'Última_Fecha' siempre se moverá al final al guardar.")
+        st.warning("⚠️ **Advertencia**: Para **añadir nuevas pruebas RM**, escribe el nombre de la prueba (Ej: **Biceps_RM**) en el encabezado de la columna vacía que se llama **'Nueva_Prueba'** y luego guarda. La columna 'Última_Fecha' siempre se moverá al final al guardar.")
 
         df_editor_main = df_atletas.copy()
         
@@ -540,12 +545,8 @@ if rol_actual == 'Entrenador':
                 "PressBanca_RM": st.column_config.NumberColumn("PressBanca_RM (kg)", format="%.1f"),
                 "PesoCorporal": st.column_config.NumberColumn("PesoCorporal (kg)", format="%.1f"),
                 "Última_Fecha": st.column_config.DateColumn("Última_Fecha"),
-                # --- SOLUCIÓN CLAVE: FORZAR COLUMNA DE ADICIÓN ---
-                "__add__": st.column_config.Column(
-                    "➕ Nueva Prueba (Columna)", 
-                    width="small",
-                ),
-                
+                # Columna temporal forzada para añadir nuevas columnas
+                "Nueva_Prueba": st.column_config.Column("Nueva_Prueba", help="Escribe el nombre de la nueva columna RM aquí (Ej: Dominadas_RM)"), 
             },
             use_container_width=True,
             key="main_data_editor"
@@ -553,7 +554,6 @@ if rol_actual == 'Entrenador':
         
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Datos de Atletas y Aplicar", type="primary", key="save_main_data_btn"):
-            # Lógica para rellenar IDs faltantes antes de guardar (importante para nuevos atletas)
             if 'ID' in df_edited_main.columns:
                 max_id = df_edited_main['ID'].dropna().max()
                 if pd.isna(max_id): max_id = 0
@@ -563,7 +563,6 @@ if rol_actual == 'Entrenador':
                         max_id += 1
                         df_edited_main.loc[index, 'ID'] = max_id
                         
-            # Asegurar que las columnas requeridas no sean nulas 
             df_edited_cleaned_main = df_edited_main.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
             if save_main_data(df_edited_cleaned_main):
