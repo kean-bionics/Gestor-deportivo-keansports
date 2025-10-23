@@ -126,7 +126,7 @@ def load_tests_data():
     return df_tests[df_tests['Visible'] == True], status_message
 
 
-# --- 3. CARGA DE DATOS AL INICIO DE LA APP ---
+# --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
@@ -145,8 +145,7 @@ def check_login(username, password):
     return False, None, None
 
 def login_form():
-    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app (NO en sidebar)."""
-    # NO se usa st.sidebar.header aquí
+    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
     st.markdown("---")
     with st.form("login_form"):
         username = st.text_input("Usuario (Nombre del Atleta)")
@@ -193,20 +192,28 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 # ----------------------------------------------------------------------
-# --- PANTALLA DE ACCESO/BIENVENIDA (CENTRALIZADA) ---
+# --- PANTALLA DE ACCESO/BIENVENIDA (CENTRALIZADA CON COLORES) ---
 # ----------------------------------------------------------------------
 if not st.session_state['logged_in']:
     
-    # Creamos 3 columnas: [Espaciador izquierdo (1), Columna central para el contenido (2), Espaciador derecho (1)]
+    # Columna central para el contenido y espaciadores para centrado
     col1, col2, col3 = st.columns([1, 2, 1]) 
     
     with col2: # Todo el contenido se centra en la columna del medio
-        st.image(LOGO_PATH, width=200) 
-        st.markdown("<h1 style='text-align: center; color: #4CAF50;'>¡Bienvenido al Gestor de Rendimiento!</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; font-size: 1.2em;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", unsafe_allow_html=True)
+        
+        # Centrado del logo
+        logo_col_left, logo_col_center, logo_col_right = st.columns([1, 3, 1])
+        with logo_col_center:
+            st.image(LOGO_PATH, width=250)
+            
+        # Título principal con color naranja
+        st.markdown("<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>", unsafe_allow_html=True)
+        
+        # Subtítulo con color blanco
+        st.markdown("<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", unsafe_allow_html=True)
         
         st.info("Por favor, inicia sesión para acceder a la aplicación.")
-        login_form() # El formulario ahora se muestra aquí, centrado.
+        login_form()
         
     st.stop()
     
