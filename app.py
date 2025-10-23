@@ -18,11 +18,14 @@ CALENDAR_REQUIRED_COLUMNS = ['Evento', 'Fecha', 'Detalle', 'Habilitado']
 # Archivo 3: Pruebas Activas (Modularidad de la Calculadora)
 PRUEBAS_FILE = 'pruebas_activas.xlsx'
 
+# Archivo 4: Perfiles de Atletas (NUEVO)
+PERFILES_FILE = 'perfiles.xlsx'
+
 # RUTA DEL LOGO
 LOGO_PATH = 'logo.png' 
 
 
-# --- 2. FUNCIONES DE CARGA DE DATOS (SIN LLAMADAS A ST.XYZ INTERNAS) ---
+# --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ) ---
 
 @st.cache_data(ttl=3600) 
 def load_data():
@@ -125,12 +128,45 @@ def load_tests_data():
     
     return df_tests[df_tests['Visible'] == True], status_message
 
+# --- NUEVA FUNCIÓN DE CARGA DE PERFILES ---
+@st.cache_data(ttl=3600)
+def load_perfil_data():
+    """Carga los datos de perfil de los atletas desde el archivo Excel. Si no existe, lo crea."""
+    df_perfil = pd.DataFrame()
+    excel_exists = os.path.exists(PERFILES_FILE)
+
+    # DataFrame básico para crear el archivo si no existe
+    DEFAULT_PROFILE_DATA = {
+        'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez'],
+        'Edad': [30, 25, 22],
+        'Fecha_Nacimiento': ['1994-01-01', '1999-05-10', '2002-01-20'],
+        'Documento': ['999', '12345678', '87654321'],
+        'Altura_cm': [180, 178, 165],
+        'Posicion': ['Entrenador', 'Delantero', 'Defensora'],
+        'Email': ['tu@mail.com', 'juan@mail.com', 'ana@mail.com']
+    }
+    REQUIRED_PROFILE_COLUMNS = list(DEFAULT_PROFILE_DATA.keys())
+    
+    if excel_exists:
+        try:
+            df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
+        except:
+             excel_exists = False
+
+    if not excel_exists or df_perfil.empty:
+        df_perfil = pd.DataFrame(DEFAULT_PROFILE_DATA, columns=REQUIRED_PROFILE_COLUMNS) 
+        df_perfil.to_excel(PERFILES_FILE, index=False, engine='openpyxl') 
+        st.toast(f"Archivo '{PERFILES_FILE}' creado con éxito.", icon="👤")
+
+    return df_perfil
+
 
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
 df_pruebas, tests_status = load_tests_data() 
+df_perfiles = load_perfil_data() # <--- CARGA DEL NUEVO ARCHIVO
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -146,7 +182,6 @@ def check_login(username, password):
 
 def login_form():
     """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
-    # NO se usa st.sidebar aquí
     with st.form("login_form"):
         username = st.text_input("Usuario (Nombre del Atleta)")
         password = st.text_input("Contraseña", type="password")
@@ -196,7 +231,7 @@ if 'logged_in' not in st.session_state:
 # ----------------------------------------------------------------------
 if not st.session_state['logged_in']:
     
-    # Fila Superior: Logo a la izquierda (1) y Espaciador (10)
+    # Fila Superior: Logo a la izquierda
     logo_col, spacer_col = st.columns([1, 10])
     with logo_col:
         st.image(LOGO_PATH, width=120) 
@@ -240,11 +275,11 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definir pestañas según el rol
+# Definición de pestañas (AÑADIMOS LA PESTAÑA PERFIL)
 if rol_actual == 'Entrenador':
-    tab1, tab2, tab3 = st.tabs(["📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario"])
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB = st.tabs(["📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil"])
 else:
-    tab2, tab3 = st.tabs(["🧮 Calculadora de Carga", "📅 Calendario"])
+    tab2, CALENDAR_TAB, PERFIL_TAB = st.tabs(["🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil"])
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 1: VISTA ENTRENADOR (Solo visible para Entrenador)
@@ -257,8 +292,9 @@ if rol_actual == 'Entrenador':
         # Botones de recarga
         col_recarga_atletas, col_recarga_pruebas = st.columns(2)
         with col_recarga_atletas:
-            if st.button("Recargar Datos de Atletas", help="Recarga el archivo 'atletas_data.xlsx'."):
+            if st.button("Recargar Datos de Atletas / Perfiles", help="Recarga 'atletas_data.xlsx' y 'perfiles.xlsx'."):
                 load_data.clear()
+                load_perfil_data.clear()
                 st.rerun() 
         with col_recarga_pruebas:
             if st.button("Recargar Pruebas / Calendario", help="Recarga 'pruebas_activas.xlsx' y 'calendario_data.xlsx'."):
@@ -269,7 +305,6 @@ if rol_actual == 'Entrenador':
         st.markdown("---")
         st.caption(f"Archivo de origen: **{EXCEL_FILE}**")
         
-        # Muestra la tabla de datos completa (sin la contraseña)
         df_mostrar = df_atletas.drop(columns=['Contraseña'], errors='ignore')
         st.dataframe(df_mostrar, use_container_width=True)
         
@@ -332,9 +367,7 @@ with calc_tab:
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 3: CALENDARIO (Visible para todos)
 # ----------------------------------------------------------------------------------
-calendar_tab = tab3
-
-with calendar_tab:
+with CALENDAR_TAB:
     st.header("📅 Calendario de Pruebas y Actividades")
     st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
     
@@ -345,9 +378,46 @@ with calendar_tab:
         eventos_mostrar = df_calendario
     else:
         st.subheader(f"Próximos Eventos Habilitados para {atleta_actual}")
-        # El atleta solo ve los eventos marcados como True (Sí)
         eventos_mostrar = df_calendario[df_calendario['Habilitado'] == True].drop(columns=['Habilitado'], errors='ignore')
     
     st.dataframe(eventos_mostrar, use_container_width=True)
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 4: PERFIL (Visible para todos)
+# ----------------------------------------------------------------------------------
+with PERFIL_TAB:
+    st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
+    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
+
+    # Obtener los datos del atleta logueado
+    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
+
+    if not datos_perfil.empty:
+        perfil = datos_perfil.iloc[0].drop('Atleta', errors='ignore')
+
+        st.subheader("Información Personal")
+        
+        # Mostrar los datos en dos columnas para mejor diseño
+        cols = st.columns(2)
+        
+        for i, (key, value) in enumerate(perfil.items()):
+            # Formatear la Fecha de Nacimiento
+            if key.lower() == 'fecha_nacimiento' and pd.notna(value):
+                value_display = value.strftime('%Y-%m-%d') if isinstance(value, pd.Timestamp) else str(value)
+            else:
+                value_display = str(value)
+                
+            with cols[i % 2]:
+                st.metric(label=key.replace('_', ' ').title(), value=value_display)
+
+    else:
+        st.warning(f"No se encontró información de perfil para **{atleta_actual}** en el archivo {PERFILES_FILE}. Por favor, verifique el Excel.")
+
+    # Opción para el Entrenador (vista de gestión simple)
+    if rol_actual == 'Entrenador':
+        st.markdown("---")
+        st.subheader("Gestión de Perfiles (Vista Entrenador)")
+        st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
+        st.dataframe(df_perfiles, use_container_width=True)
 
 # --- FIN DEL CÓDIGO ---
