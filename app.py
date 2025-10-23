@@ -34,7 +34,7 @@ READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposi
 LOGO_PATH = 'logo.png' 
 
 
-# --- 2. FUNCIONES DE CARGA DE DATOS (SIN MENSAJES DE ÉXITO) ---
+# --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ) ---
 
 @st.cache_data(ttl=3600) 
 def load_data():
@@ -111,7 +111,10 @@ def load_calendar_data():
 
 @st.cache_data(ttl=3600)
 def load_tests_data():
-    """Carga la lista de pruebas activas para la calculadora."""
+    """
+    Carga la lista de pruebas activas para la calculadora.
+    Retorna el DataFrame COMPLETO (sin filtrar por Visible) y el mensaje de estado.
+    """
     status_message = None
     
     if not os.path.exists(PRUEBAS_FILE):
@@ -131,9 +134,11 @@ def load_tests_data():
         status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
         return pd.DataFrame(), status_message 
 
-    df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip() == 'sí'
+    # Convertir Visible a booleano, necesario para la edición y el filtrado posterior
+    df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     
-    return df_tests[df_tests['Visible'] == True], status_message
+    # Retorna el DF completo (con la columna Visible booleana)
+    return df_tests, status_message 
 
 @st.cache_data(ttl=3600)
 def load_perfil_data():
@@ -239,7 +244,8 @@ def load_readiness_data():
 
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
-df_pruebas, tests_status = load_tests_data() 
+df_pruebas_full, tests_status = load_tests_data() # Carga el DF COMPLETO para edición
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() # Filtra solo las visibles para la calculadora
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
@@ -334,11 +340,9 @@ def descomponer_placas(peso_total, peso_barra):
 
     return peso_cargado_total, placas_por_lado
 
-# --- SOLUCIÓN AL PROBLEMA DE ACTUALIZACIÓN DEL HISTORIAL DE BIENESTAR ---
 def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     """Añade una nueva fila al archivo readiness_data.xlsx, actualiza el archivo y el DataFrame global."""
     
-    # 1. Cargar el DF actual (usamos la función de carga para asegurar que tengamos la data más reciente)
     try:
         current_df, _ = load_readiness_data()
         if current_df.empty:
@@ -356,22 +360,36 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     
     new_df = pd.DataFrame([new_entry])
     
-    # Concatenar el registro actual y el nuevo
     df_updated = pd.concat([current_df, new_df], ignore_index=True)
     
     try:
-        # 2. Escribir de vuelta al Excel
         df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
-        
-        # 3. Forzar la limpieza de la caché
         load_readiness_data.clear() 
-        
-        # 4. Retornar el nuevo DataFrame cargado (para la visualización inmediata)
         return load_readiness_data()[0], True
         
     except Exception as e:
         st.error(f"Error al guardar los datos de bienestar: {e}")
         return current_df, False
+    
+def save_tests_data(df_edited):
+    """Guarda el DataFrame editado de pruebas activas en el archivo XLSX."""
+    # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
+    df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
+    
+    # Aseguramos que solo se guardan las columnas requeridas (por si se añade una columna temporal)
+    df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
+    
+    try:
+        # 2. Sobrescribir el archivo Excel
+        df_to_save.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
+        
+        # 3. Limpiar la caché de las pruebas para que la calculadora se actualice
+        load_tests_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar las pruebas: {e}")
+        return False
 
 
 # --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
@@ -467,9 +485,8 @@ if rol_actual == 'Entrenador':
                 load_readiness_data.clear()
                 st.rerun() 
         with col_recarga_pruebas:
-            if st.button("Recargar Pruebas / Calendario", help="Recarga 'pruebas_activas.xlsx' y 'calendario_data.xlsx'."):
+            if st.button("Recargar Calendario", help="Recarga 'calendario_data.xlsx'."):
                 load_calendar_data.clear()
-                load_tests_data.clear()
                 st.rerun()
 
         st.markdown("---")
@@ -480,8 +497,36 @@ if rol_actual == 'Entrenador':
         
         st.markdown("---")
         st.subheader("Gestión de Pruebas (Modularidad de la Calculadora)")
-        st.caption(f"Edita el archivo **{PRUEBAS_FILE}** para habilitar o deshabilitar pruebas.")
-        st.dataframe(df_pruebas, use_container_width=True)
+        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito.**")
+        
+        # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE ---
+        
+        # 1. Widget de edición (usa el DF completo)
+        df_edited = st.data_editor(
+            df_pruebas_full, # Usamos el DF COMPLETO
+            num_rows="dynamic", # Permite añadir y eliminar filas
+            column_config={
+                "Visible": st.column_config.CheckboxColumn(
+                    "Visible",
+                    help="Marca para mostrar la prueba en la calculadora.",
+                    default=False,
+                ),
+                # Es buena práctica hacer las columnas de ID/ColumnaRM no editables para evitar errores
+                "ColumnaRM": st.column_config.Column("ColumnaRM", disabled=True), 
+                "NombrePrueba": st.column_config.Column("NombrePrueba", required=True),
+            },
+            use_container_width=True,
+            key="tests_data_editor"
+        )
+
+        # 2. Botón de guardado
+        if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="primary"):
+            if save_tests_data(df_edited):
+                st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
+                st.rerun()
+            else:
+                st.error("❌ No se pudieron guardar los cambios.")
+        # --- FIN IMPLEMENTACIÓN CLAVE ---
     
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 2: CALCULADORA DE CARGA (Visible para todos)
@@ -499,10 +544,11 @@ with calc_tab:
     col_ejercicio, col_barra = st.columns([2, 1])
 
     with col_ejercicio:
-        ejercicio_options = df_pruebas['NombrePrueba'].tolist()
+        # Usamos el DF FILTRADO (df_pruebas)
+        ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
-            st.warning("No hay pruebas visibles.")
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
             ejercicio_default = st.selectbox(
@@ -718,12 +764,10 @@ with BIENESTAR_TAB:
         submitted = st.form_submit_button("Guardar Registro Diario")
         
         if submitted:
-            # 1. Guardar y capturar el nuevo DataFrame
             updated_df, success = save_readiness_data(atleta_actual, fecha_registro, sueno, molestias, disposicion)
             
             if success:
                 st.success("¡Registro de bienestar guardado exitosamente! Actualizando historial...")
-                # 2. Actualizar la variable de sesión para mostrar inmediatamente
                 st.session_state['df_readiness_display'] = updated_df
             
 
