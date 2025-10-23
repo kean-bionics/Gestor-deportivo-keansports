@@ -196,8 +196,8 @@ if 'logged_in' not in st.session_state:
 # ----------------------------------------------------------------------
 if not st.session_state['logged_in']:
     
-    # Columna central para el contenido y espaciadores para centrado
-    col1, col2, col3 = st.columns([1, 2, 1]) 
+    # Creamos 3 columnas: [Espaciador izquierdo (1), Columna central para el contenido (3), Espaciador derecho (1)]
+    col1, col2, col3 = st.columns([1, 3, 1]) 
     
     with col2: # Todo el contenido se centra en la columna del medio
         
@@ -206,11 +206,17 @@ if not st.session_state['logged_in']:
         with logo_col_center:
             st.image(LOGO_PATH, width=250)
             
-        # Título principal con color naranja
-        st.markdown("<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>", unsafe_allow_html=True)
+        # Título principal con color NARANJA (#FFA500)
+        st.markdown(
+            f"<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>", 
+            unsafe_allow_html=True
+        )
         
-        # Subtítulo con color blanco
-        st.markdown("<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", unsafe_allow_html=True)
+        # Subtítulo con color BLANCO
+        st.markdown(
+            f"<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", 
+            unsafe_allow_html=True
+        )
         
         st.info("Por favor, inicia sesión para acceder a la aplicación.")
         login_form()
