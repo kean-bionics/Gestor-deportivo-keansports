@@ -216,13 +216,11 @@ def load_readiness_data():
         try:
             df_readiness = pd.read_excel(READINESS_FILE, engine='openpyxl')
             df_readiness.columns = df_readiness.columns.str.strip()
-            # Asegurar que 'Fecha' sea datetime
             df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
         except:
              excel_exists = False
 
     if not excel_exists or df_readiness.empty:
-        # Crear datos de ejemplo
         data = {
             'Atleta': ['Juan Pérez', 'Juan Pérez', 'Ana Gómez'],
             'Fecha': [datetime.now().date() - timedelta(days=2), datetime.now().date() - timedelta(days=1), datetime.now().date() - timedelta(days=1)],
@@ -245,7 +243,6 @@ df_calendario = load_calendar_data()
 df_pruebas, tests_status = load_tests_data() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-# NUEVA CARGA DE DATOS
 df_readiness, readiness_status = load_readiness_data()
 
 
@@ -292,13 +289,13 @@ def calcular_porcentaje_rm(rm_value, porcentaje):
         return round(peso * 2) / 2
     return 0
 
-# Relación inversa RIR a Porcentaje de 1RM (Basado en tablas de Zourdos/Tuchscherer)
+# Relación inversa RIR a Porcentaje de 1RM
 RIR_TO_PERCENT = {
-    0: (90, 100), # RPE 10 (Fallo o Cerca)
-    1: (87, 95),  # RPE 9 (Máximo esfuerzo)
-    2: (80, 87),  # RPE 8 (Lento, 2 reps en reserva)
-    3: (70, 80),  # RPE 7 (Moderado)
-    4: (65, 75),  # RPE 6 (Técnica / Calentamiento)
+    0: (90, 100), 
+    1: (87, 95),  
+    2: (80, 87),  
+    3: (70, 80),  
+    4: (65, 75),  
 }
 
 def calcular_carga_por_rir(rm_value, rir):
@@ -307,10 +304,8 @@ def calcular_carga_por_rir(rm_value, rir):
         return 0, 0
         
     min_perc, max_perc = RIR_TO_PERCENT[rir]
-    # Usar el punto medio del rango para dar una sugerencia objetiva
     mid_perc = (min_perc + max_perc) / 2
     
-    # Calcular el peso, redondeando al 0.5 kg más cercano
     peso = rm_value * (mid_perc / 100)
     return round(peso * 2) / 2, mid_perc
 
@@ -342,27 +337,29 @@ def descomponer_placas(peso_total, peso_barra):
 
 def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     """Añade una nueva fila al archivo readiness_data.xlsx."""
-    global df_readiness
-    
+    # Note: Global variable modification must be handled with care in Streamlit.
+    # We load the data directly here to ensure we save the absolute latest version.
+    try:
+        current_df, _ = load_readiness_data()
+    except Exception:
+        # Fallback if the load function fails entirely
+        current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
+
     new_entry = {
         'Atleta': atleta, 
-        'Fecha': fecha, 
+        'Fecha': pd.to_datetime(fecha), 
         'Sueño': sueno, 
         'Molestias': molestias, 
         'Disposicion': disposicion
     }
     
-    # 1. Crear el nuevo DataFrame
     new_df = pd.DataFrame([new_entry])
-    new_df['Fecha'] = pd.to_datetime(new_df['Fecha'])
-
-    # 2. Concatenar y actualizar el DataFrame global
-    df_readiness = pd.concat([df_readiness, new_df], ignore_index=True)
     
-    # 3. Escribir de vuelta al Excel
+    df_updated = pd.concat([current_df, new_df], ignore_index=True)
+    
     try:
-        df_readiness.to_excel(READINESS_FILE, index=False, engine='openpyxl')
-        load_readiness_data.clear() # Limpiar la caché
+        df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
+        load_readiness_data.clear() # Clear cache to force reload on next execution
         return True
     except Exception as e:
         st.error(f"Error al guardar los datos de bienestar: {e}")
@@ -374,6 +371,7 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
 # Muestra mensajes de estado críticos (CREACIÓN o ERROR)
+# La lógica ha sido ajustada para ser más robusta y no depender de la caché para mostrar los mensajes.
 if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
     st.toast(initial_status, icon="📝")
 if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
@@ -434,7 +432,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (AÑADIENDO BIENESTAR_TAB)
+# Definición de pestañas
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, BIENESTAR_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🧘 Bienestar", "🏆 Ranking"
@@ -486,9 +484,11 @@ calc_tab = tab2
 with calc_tab:
     st.header("🧮 Calculadora de Carga")
     
-    # --- SELECCIÓN DE EJERCICIO Y RM ---
     datos_usuario = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0]
     
+    st.write(f"**Hola, {atleta_actual}. Selecciona un ejercicio para cargar tu RM registrado.**")
+
+    # --- ENTRADA DE DATOS RM Y BARRA ---
     col_ejercicio, col_barra = st.columns([2, 1])
 
     with col_ejercicio:
@@ -498,9 +498,14 @@ with calc_tab:
             st.warning("No hay pruebas visibles.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
-            ejercicio_default = st.selectbox("Selecciona el Ejercicio:", options=ejercicio_options, key='ejercicio_calc')
+            ejercicio_default = st.selectbox(
+                "Selecciona el Ejercicio:",
+                options=ejercicio_options, 
+                key='ejercicio_calc'
+            )
             
             rm_inicial = 0.0
+            columna_rm = None
             columna_rm_series = df_pruebas[df_pruebas['NombrePrueba'] == ejercicio_default]['ColumnaRM']
             if not columna_rm_series.empty:
                 columna_rm = columna_rm_series.iloc[0]
@@ -516,7 +521,7 @@ with calc_tab:
             )
 
     with col_barra:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(" ", unsafe_allow_html=True) # Espaciado para alinear
         peso_barra = st.number_input(
             "Peso de la Barra (kg):",
             min_value=0.0,
@@ -547,8 +552,8 @@ with calc_tab:
         st.metric(f"Peso Sugerido", f"**{peso_calculado_perc} kg**")
         st.caption(f"Al {porcentaje_input}%")
     
-    # --- MÓDULO 2: CÁLCULO DE CARGA POR RIR Y REPETICIONES (NUEVO) ---
-    st.markdown("<br>---")
+    # --- MÓDULO 2: CÁLCULO DE CARGA POR RIR Y REPETICIONES ---
+    st.markdown("---")
     st.subheader("2. Estimador de Carga por RIR y Repeticiones")
     st.caption("Ingresa tu objetivo de repeticiones y esfuerzo (RIR) para obtener el peso ideal.")
 
@@ -558,18 +563,18 @@ with calc_tab:
         reps_target = st.number_input("Repeticiones Objetivo (Reps):", min_value=1, max_value=20, value=5, step=1)
         
     with col_rir:
-        rir_target = st.selectbox("Esfuerzo Deseado (RIR):", options=[4, 3, 2, 1, 0], index=2) # Default 2 RIR
+        rir_target = st.selectbox("Esfuerzo Deseado (RIR):", options=[4, 3, 2, 1, 0], index=2, key='rir_target_select')
     
     peso_calculado_rir, perc_sugerido = calcular_carga_por_rir(rm_value, rir_target)
 
     with col_target:
-        st.markdown("<br>", unsafe_allow_html=True) 
+        st.markdown(" ", unsafe_allow_html=True) 
         st.metric("Peso Ideal", f"**{peso_calculado_rir} kg**")
         if peso_calculado_rir > 0:
              st.caption(f"Equivale aprox. al {perc_sugerido:.1f}% de RM")
 
     # --- Conversión de Placas ---
-    st.markdown("<br>---")
+    st.markdown("---")
     st.subheader("Conversión de Placas")
     
     # Usar el peso del estimador RIR para la conversión, ya que es el cálculo más específico
@@ -596,7 +601,7 @@ with calc_tab:
             else:
                 st.success("No se requieren placas adicionales (Solo la barra).")
     
-    st.markdown("<br>---")
+    st.markdown("---")
 
     # --- GUÍA VBT Y RPE/RIR PARA COMBATE ---
 
@@ -702,10 +707,10 @@ with BIENESTAR_TAB:
         submitted = st.form_submit_button("Guardar Registro Diario")
         
         if submitted:
+            # La función save_readiness_data ahora usa load_readiness_data para cargar el df más reciente
             if save_readiness_data(atleta_actual, fecha_registro, sueno, molestias, disposicion):
                 st.success("¡Registro de bienestar guardado exitosamente!")
-                load_readiness_data.clear() # Forzar recarga en la siguiente ejecución
-                st.rerun()
+                # La recarga se maneja dentro de save_readiness_data. No necesitamos st.rerun() aquí
             
 
     st.markdown("---")
@@ -716,35 +721,17 @@ with BIENESTAR_TAB:
     if df_atleta_readiness.empty:
         st.info("No tienes registros de bienestar aún.")
     else:
+        # Se elimina st.column_config.Progress para compatibilidad
         st.dataframe(
             df_atleta_readiness[['Fecha', 'Sueño', 'Molestias', 'Disposicion']].head(10), 
-            use_container_width=True,
-            column_config={
-                "Sueño": st.column_config.Progress(
-                    "Sueño (5 Máx)",
-                    min_value=1,
-                    max_value=5,
-                    format="%d/5",
-                ),
-                "Molestias": st.column_config.Progress(
-                    "Molestias (5 Máx)",
-                    min_value=1,
-                    max_value=5,
-                    format="%d/5",
-                ),
-                "Disposicion": st.column_config.Progress(
-                    "Disposición (5 Máx)",
-                    min_value=1,
-                    max_value=5,
-                    format="%d/5",
-                ),
-            }
+            use_container_width=True
         )
         
         if rol_actual == 'Entrenador':
             st.markdown("---")
             st.subheader("Datos Crudos (Vista Entrenador)")
             st.dataframe(df_readiness, use_container_width=True)
+
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 6: RANKING (Visible para todos)
