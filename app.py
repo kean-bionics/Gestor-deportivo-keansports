@@ -184,6 +184,30 @@ def load_perfil_data():
 
     return df_perfil, status_message
 
+
+# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
+def calculate_and_sort_ranking(df):
+    """Calcula los puntos y ordena el ranking por jerarquía de medallas."""
+    
+    # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
+    for col in ['Oros', 'Platas', 'Bronces']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+    # 2. Calcular los puntos (7 por Oro, 3 por Plata, 1 por Bronce)
+    df['Puntos'] = (df['Oros'] * 7) + (df['Platas'] * 3) + (df['Bronces'] * 1)
+    
+    # 3. Ordenación jerárquica: Oros > Platas > Bronces > Puntos
+    df_sorted = df.sort_values(
+        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
+        ascending=[False, False, False, False] # Mayor a menor para todos
+    ).copy()
+    
+    # 4. Re-asignar la posición
+    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
+    
+    return df_sorted
+# -----------------------------------------------------
+
 @st.cache_data(ttl=3600)
 def load_ranking_data():
     """Carga los datos de ranking, los calcula, ordena y crea el archivo si no existe."""
@@ -459,29 +483,6 @@ def save_calendar_data(df_edited):
     except Exception as e:
         st.error(f"Error al guardar el calendario: {e}")
         return False
-
-# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
-def calculate_and_sort_ranking(df):
-    """Calcula los puntos y ordena el ranking por jerarquía de medallas."""
-    
-    # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
-    for col in ['Oros', 'Platas', 'Bronces']:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        
-    # 2. Calcular los puntos (7 por Oro, 3 por Plata, 1 por Bronce)
-    df['Puntos'] = (df['Oros'] * 7) + (df['Platas'] * 3) + (df['Bronces'] * 1)
-    
-    # 3. Ordenación jerárquica: Oros > Platas > Bronces > Puntos
-    df_sorted = df.sort_values(
-        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
-        ascending=[False, False, False, False] # Mayor a menor para todos
-    ).copy()
-    
-    # 4. Re-asignar la posición
-    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
-    
-    return df_sorted
-# -----------------------------------------------------
 
 # --- NUEVAS FUNCIONES PARA EL RESALTADO ---
 
