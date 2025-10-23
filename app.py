@@ -24,7 +24,8 @@ PERFILES_FILE = 'perfiles.xlsx'
 
 # Archivo 5: Ranking
 RANKING_FILE = 'ranking.xlsx'
-RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces', 'Puntos']
+# --- CAMBIO CLAVE: Eliminación de 'Puntos' de la estructura requerida ---
+RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
 # Archivo 6: Readiness
 READINESS_FILE = 'readiness_data.xlsx'
@@ -187,17 +188,17 @@ def load_perfil_data():
 
 # --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
 def calculate_and_sort_ranking(df):
-    """Calcula los puntos y ordena el ranking por jerarquía de medallas."""
+    """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
     
     # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
     for col in ['Oros', 'Platas', 'Bronces']:
-        # Forzamos conversión a entero, tratando errores como 0 (fillna(0))
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
-    # 2. Calcular los puntos (10 por Oro, 3 por Plata, 1 por Bronce)
-    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1) # <--- ORO = 10 PUNTOS
+    # 2. Calcular los puntos (Oro=10, Plata=3, Bronce=1)
+    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
     
-    # 3. Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro) > Puntos (Desempate)
+    # 3. Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro)
+    # NOTA: Los 'Puntos' quedan como desempate final, pero la clasificación se basa en la jerarquía de medallas.
     df_sorted = df.sort_values(
         by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
         ascending=[False, False, False, False] # Mayor a menor para todos
@@ -221,10 +222,13 @@ def load_ranking_data():
             df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
             df_ranking.columns = df_ranking.columns.str.strip() 
             
+            # Ajustamos la verificación de columnas requeridas para el nuevo set
             missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
             if missing_cols:
                  status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
-                 df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS) 
+                 # Creamos un DF vacío con todas las columnas, incluyendo Puntos, para evitar fallos.
+                 full_ranking_cols = RANKING_REQUIRED_COLUMNS + ['Puntos'] 
+                 df_ranking = pd.DataFrame(columns=full_ranking_cols) 
             
         except:
              excel_exists = False
@@ -237,14 +241,15 @@ def load_ranking_data():
             'Oros': [5, 2, 1, 0],
             'Platas': [2, 3, 0, 1],
             'Bronces': [1, 0, 1, 2],
-            'Puntos': [500, 350, 200, 150]
         }
+        # Creamos un DF de ejemplo solo con las columnas base
         df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
         df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
         status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
 
     # --- LÓGICA CLAVE: CALCULAR Y ORDENAR AL CARGAR ---
     if not df_ranking.empty:
+        # Aseguramos que la columna 'Puntos' exista antes de ordenar (la crea si no existe)
         df_ranking = calculate_and_sort_ranking(df_ranking)
         
     return df_ranking, status_message
@@ -1046,21 +1051,20 @@ with BIENESTAR_TAB:
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
-    st.caption("Ordenado por: **Oros > Platas > Bronces > Puntos**. (Oro=10, Plata=3, Bronce=1)") # <--- DESCRIPCIÓN ACTUALIZADA
+    st.caption("Ordenado por: **Oros > Platas > Bronces**. (Oro=10, Plata=3, Bronce=1)")
     st.caption(f"Archivo de origen: **{RANKING_FILE}**")
     
     if rol_actual == 'Entrenador':
         st.subheader("Gestión de Ranking (Edición Directa)")
-        st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición y los Puntos se recalcularán automáticamente al guardar.**")
+        st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición se recalculará automáticamente al guardar.**")
         
         # 1. Widget de edición (usando el DF ordenado actual)
         df_edited_ranking = st.data_editor(
-            df_ranking, 
+            df_ranking.drop(columns=['Puntos'], errors='ignore'), # Ocultamos Puntos del editor
             num_rows="dynamic",
             column_config={
                 # Deshabilitar Posicion y Puntos porque se calculan automáticamente
                 "Posicion": st.column_config.NumberColumn("Posición", disabled=True),
-                "Puntos": st.column_config.NumberColumn("Puntos", disabled=True),
                 "Atleta": st.column_config.TextColumn("Atleta", required=True),
                 "Categoria": st.column_config.TextColumn("Categoría"),
                 "Oros": st.column_config.NumberColumn("🥇 Oros"),
@@ -1082,16 +1086,15 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader("Clasificación Actual")
 
-    # Muestra el ranking ordenado (usa df_ranking global, que ya está ordenado)
+    # Muestra el ranking ordenado final (sin la columna Puntos para el atleta)
     st.dataframe(
-        df_ranking, 
+        df_ranking.drop(columns=['Puntos'], errors='ignore'), 
         use_container_width=True,
         column_config={
             "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
             "Oros": st.column_config.NumberColumn("🥇 Oros", format="%d"),
             "Platas": st.column_config.NumberColumn("🥈 Platas", format="%d"),
             "Bronces": st.column_config.NumberColumn("🥉 Bronces", format="%d"),
-            "Puntos": st.column_config.NumberColumn("Puntos", format="%d"),
         },
         height=35 * (len(df_ranking) + 1)
     )
@@ -1103,10 +1106,10 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader(f"Tu Posición Actual: {atleta_actual}")
         
-        col_rank, col_points, col_medals = st.columns(3)
+        # Eliminamos la métrica de Puntos Totales
+        col_rank, col_medals = st.columns(2)
         
         col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
-        col_points.metric("Puntos Totales", f"{int(rank_data['Puntos'])} pts")
         
         medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
         col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
