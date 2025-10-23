@@ -29,7 +29,7 @@ RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas',
 LOGO_PATH = 'logo.png' 
 
 
-# --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ) ---
+# --- 2. FUNCIONES DE CARGA DE DATOS (SIN MENSAJES DE ÉXITO) ---
 
 @st.cache_data(ttl=3600) 
 def load_data():
@@ -42,7 +42,6 @@ def load_data():
         try:
             df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
             
-            # Limpieza de encabezados para evitar KeyErrors
             df.columns = df.columns.str.strip() 
             
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
@@ -51,16 +50,15 @@ def load_data():
                 for col in missing_cols:
                     df[col] = None
                     
-            if not status_message:
-                 status_message = "Datos de atletas cargados exitosamente."
+            # Mensaje de éxito eliminado/silenciado
+            # if not status_message: status_message = "Datos de atletas cargados exitosamente."
             
         except Exception as e:
             status_message = f"Error al leer el archivo Excel de atletas ({e}). Se creará un archivo nuevo de ejemplo."
             excel_exists = False
 
     if not excel_exists or df.empty:
-        # Crea un DataFrame de ejemplo
-        status_message = f"Creando el archivo '{EXCEL_FILE}' de ejemplo con la estructura inicial..."
+        status_message = f"Creando el archivo '{EXCEL_FILE}' de ejemplo con la estructura inicial."
         data = {
             'ID': [1, 2, 3],
             'Atleta': ['Juan Pérez', 'Ana Gómez', 'Tu Nombre'],
@@ -74,7 +72,7 @@ def load_data():
         df = pd.DataFrame(data, columns=REQUIRED_COLUMNS) 
         
         df.to_excel(EXCEL_FILE, index=False, engine='openpyxl') 
-        status_message = f"Archivo '{EXCEL_FILE}' creado con éxito."
+        status_message += " Archivo creado con éxito."
         
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
@@ -90,12 +88,11 @@ def load_calendar_data():
     if excel_exists:
         try:
             calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
-            calendar_df.columns = calendar_df.columns.str.strip() # Limpieza de encabezados
+            calendar_df.columns = calendar_df.columns.str.strip() 
         except:
              excel_exists = False
 
     if not excel_exists or calendar_df.empty:
-        # Crea un DataFrame de ejemplo si no existe o hubo error
         data = {
             'Evento': ['Prueba de RM (Sentadilla/PB)', 'Evaluación de Resistencia', 'Reunión de Equipo'],
             'Fecha': ['2025-11-01', '2025-11-15', '2025-11-20'],
@@ -104,6 +101,7 @@ def load_calendar_data():
         }
         calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
         calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
+        # st.toast(f"Archivo '{CALENDAR_FILE}' creado con éxito.", icon="🗓️") <-- TOAST ELIMINADO/SILENCIADO
 
     if 'Habilitado' in calendar_df.columns:
         calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
@@ -116,7 +114,6 @@ def load_tests_data():
     status_message = None
     
     if not os.path.exists(PRUEBAS_FILE):
-        # Crea archivo si no existe
         data = {
             'NombrePrueba': ['Sentadilla', 'Press Banca', 'Peso Muerto', 'Otro'],
             'ColumnaRM': ['Sentadilla_RM', 'PressBanca_RM', 'PesoMuerto_RM', 'N/A'],
@@ -128,7 +125,7 @@ def load_tests_data():
     
     try:
         df_tests = pd.read_excel(PRUEBAS_FILE, engine='openpyxl')
-        df_tests.columns = df_tests.columns.str.strip() # Limpieza de encabezados
+        df_tests.columns = df_tests.columns.str.strip()
     except Exception as e:
         status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
         return pd.DataFrame(), status_message 
@@ -142,6 +139,7 @@ def load_perfil_data():
     """Carga los datos de perfil de los atletas desde el archivo Excel. Si no existe, lo crea."""
     df_perfil = pd.DataFrame()
     excel_exists = os.path.exists(PERFILES_FILE)
+    status_message = None
 
     DEFAULT_PROFILE_DATA = {
         'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez'],
@@ -157,40 +155,39 @@ def load_perfil_data():
     if excel_exists:
         try:
             df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
-            df_perfil.columns = df_perfil.columns.str.strip() # Limpieza de encabezados
+            df_perfil.columns = df_perfil.columns.str.strip()
         except:
              excel_exists = False
 
     if not excel_exists or df_perfil.empty:
         df_perfil = pd.DataFrame(DEFAULT_PROFILE_DATA, columns=REQUIRED_PROFILE_COLUMNS) 
         df_perfil.to_excel(PERFILES_FILE, index=False, engine='openpyxl') 
-        st.toast(f"Archivo '{PERFILES_FILE}' creado con éxito.", icon="👤")
+        status_message = f"Archivo '{PERFILES_FILE}' creado con éxito."
 
-    return df_perfil
+    return df_perfil, status_message
 
 @st.cache_data(ttl=3600)
 def load_ranking_data():
     """Carga los datos de ranking desde el archivo Excel. Si no existe, lo crea."""
     df_ranking = pd.DataFrame()
     excel_exists = os.path.exists(RANKING_FILE)
+    status_message = None
     
     if excel_exists:
         try:
             df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
-            # SOLUCIÓN CRÍTICA: ELIMINAR ESPACIOS EN BLANCO DE LOS ENCABEZADOS
             df_ranking.columns = df_ranking.columns.str.strip() 
             
             missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
             if missing_cols:
-                 st.warning(f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo.")
+                 status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
                  df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS) 
-                 return df_ranking
+                 return df_ranking, status_message
             
         except:
              excel_exists = False
 
     if not excel_exists or df_ranking.empty:
-        # Crea un DataFrame de ejemplo si el archivo no existe o falló la lectura
         data = {
             'Posicion': [1, 2, 3, 4],
             'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez', 'Pedro Lopez'],
@@ -202,9 +199,9 @@ def load_ranking_data():
         }
         df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
         df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
-        st.toast(f"Archivo '{RANKING_FILE}' creado con éxito.", icon="🏆")
+        status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
 
-    return df_ranking
+    return df_ranking, status_message
 
 
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
@@ -212,8 +209,8 @@ def load_ranking_data():
 df_atletas, initial_status = load_data() 
 df_calendario = load_calendar_data()
 df_pruebas, tests_status = load_tests_data() 
-df_perfiles = load_perfil_data() 
-df_ranking = load_ranking_data()
+df_perfiles, perfil_status = load_perfil_data() 
+df_ranking, ranking_status = load_ranking_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -259,27 +256,24 @@ def calcular_porcentaje_rm(rm_value, porcentaje):
         return round(peso * 2) / 2
     return 0
 
-# --- NUEVA FUNCIÓN PARA DESCOMPONER EL PESO EN PLACAS ---
 def descomponer_placas(peso_total, peso_barra):
     """Calcula las placas necesarias por lado para un peso total dado."""
     if peso_total <= peso_barra or peso_barra < 0:
         return "Barra Sola o Peso Inválido", {}
 
     peso_a_cargar = (peso_total - peso_barra) / 2
-    # Placas estándar (incluyendo 0.5 kg)
     placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5] 
     placas_por_lado = {}
 
     peso_restante = peso_a_cargar
     
     for placa in placas_disponibles:
-        if peso_restante >= (placa - 0.01): # Usamos -0.01 para manejar imprecisiones
+        if peso_restante >= (placa - 0.01):
             cantidad = int(peso_restante // placa)
             if cantidad > 0:
                 placas_por_lado[placa] = cantidad
                 peso_restante -= (cantidad * placa)
             
-            # Ajuste de redondeo final para evitar errores de coma flotante
             if peso_restante < 0.1: 
                 peso_restante = 0
                 break
@@ -293,39 +287,41 @@ def descomponer_placas(peso_total, peso_barra):
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
-# Muestra los mensajes de estado inicial 
-st.toast(initial_status, icon="📝")
-if tests_status:
+# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
+if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
+    st.toast(initial_status, icon="📝")
+if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
     st.toast(tests_status, icon="🛠️")
+if perfil_status and ('creado' in perfil_status.lower() or 'error' in perfil_status.lower() or 'adver' in perfil_status.lower()):
+    st.toast(perfil_status, icon="👤")
+if ranking_status and ('creado' in ranking_status.lower() or 'error' in ranking_status.lower() or 'adver' in ranking_status.lower()):
+    st.toast(ranking_status, icon="🏆")
+
 
 # Inicializar el estado de la sesión
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 # ----------------------------------------------------------------------
-# --- PANTALLA DE ACCESO/BIENVENIDA (LOGO IZQUIERDA, TEXTO CENTRADO) ---
+# --- PANTALLA DE ACCESO/BIENVENIDA ---
 # ----------------------------------------------------------------------
 if not st.session_state['logged_in']:
     
-    # Fila Superior: Logo a la izquierda
     logo_col, spacer_col = st.columns([1, 10])
     with logo_col:
         st.image(LOGO_PATH, width=120) 
     
     st.markdown("---") 
 
-    # Contenido Central: [Espaciador (1), Contenido (3), Espaciador (1)]
     col1, col2, col3 = st.columns([1, 3, 1]) 
     
     with col2: 
         
-        # Título principal con color NARANJA y centrado forzado
         st.markdown(
             f"<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>", 
             unsafe_allow_html=True
         )
         
-        # Subtítulo con color BLANCO y centrado forzado
         st.markdown(
             f"<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", 
             unsafe_allow_html=True
@@ -343,7 +339,6 @@ if not st.session_state['logged_in']:
 st.title("💪 RM & Rendimiento Manager")
 logout() 
 
-# Mostrar logo en la sidebar después del login
 if st.session_state['logged_in']:
     st.sidebar.image(LOGO_PATH, width=100)
     st.sidebar.markdown("---")
@@ -398,7 +393,6 @@ calc_tab = tab2
 with calc_tab:
     st.header("🧮 Calculadora de Carga por Porcentaje (%) de RM")
     
-    # Obtener datos del usuario logueado
     datos_usuario = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0]
     
     st.write(f"**Hola, {atleta_actual}. Selecciona un ejercicio para cargar tu RM registrado.**")
@@ -435,13 +429,12 @@ with calc_tab:
                 step=5.0
             )
 
-    # --- PESO DE BARRA MANUAL ---
     with col_barra:
-        st.markdown("<br>", unsafe_allow_html=True) # Espaciado para alinear
+        st.markdown("<br>", unsafe_allow_html=True)
         peso_barra = st.number_input(
             "Peso de la Barra (kg):",
             min_value=0.0,
-            value=20.0, # Valor por defecto
+            value=20.0,
             step=2.5,
             key='peso_barra_input'
         )
@@ -449,7 +442,6 @@ with calc_tab:
     st.markdown("---")
     st.subheader("Calculadora de Carga Dinámica")
 
-    # --- ÚNICO SLIDER DE PORCENTAJE ---
     porcentaje_input = st.slider(
         "Selecciona el Porcentaje (%) de tu RM que deseas calcular:",
         min_value=0,
@@ -460,17 +452,14 @@ with calc_tab:
     
     peso_calculado = calcular_porcentaje_rm(rm_value, porcentaje_input)
     
-    # --- RESULTADOS Y CONVERSIÓN DE PLACAS ---
     st.markdown("<br>", unsafe_allow_html=True)
 
     col_metric, col_placas = st.columns([1, 1])
     
-    # 1. Métrica Principal
     with col_metric:
         st.metric(f"Peso Requerido al {porcentaje_input}% de RM", f"**{peso_calculado} kg**")
         st.caption("Nota: El peso se redondea al 0.5 kg más cercano.")
 
-    # 2. Conversión de Placas
     peso_total_cargado, placas_por_lado = descomponer_placas(peso_calculado, peso_barra)
     
     with col_placas:
@@ -487,8 +476,6 @@ with calc_tab:
                 st.success("No se requieren placas adicionales (Solo la barra).")
     
     st.markdown("---")
-
-    # --- GUÍA VBT Y RPE/RIR PARA COMBATE (COMBINADO EN DOS COLUMNAS) ---
 
     col_rpe, col_vbt = st.columns(2)
 
@@ -513,8 +500,6 @@ with calc_tab:
             'Velocidad Objetivo (m/s)': ['0.30 - 0.45', '0.50 - 0.70', '0.75 - 1.00', '1.00 - 1.30']
         })
         st.table(vbt_guide.set_index('% de 1RM Típico'))
-# ----------------------------------------------------------------------------------
-# ... (El resto de las pestañas sigue igual)
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 3: CALENDARIO (Visible para todos)
 # ----------------------------------------------------------------------------------
@@ -587,7 +572,6 @@ with RANKING_TAB:
         height=35 * (len(df_ranking) + 1)
     )
 
-    # Mostrar la posición del atleta actual de forma destacada
     current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
     if not current_athlete_rank.empty:
         rank_data = current_athlete_rank.iloc[0]
