@@ -186,10 +186,10 @@ def load_perfil_data():
 
 @st.cache_data(ttl=3600)
 def load_ranking_data():
-    """Carga los datos de ranking desde el archivo Excel. Si no existe, lo crea."""
+    """Carga los datos de ranking, los calcula, ordena y crea el archivo si no existe."""
     df_ranking = pd.DataFrame()
-    excel_exists = os.path.exists(RANKING_FILE)
     status_message = None
+    excel_exists = os.path.exists(RANKING_FILE)
     
     if excel_exists:
         try:
@@ -200,7 +200,6 @@ def load_ranking_data():
             if missing_cols:
                  status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
                  df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS) 
-                 return df_ranking, status_message
             
         except:
              excel_exists = False
@@ -219,6 +218,10 @@ def load_ranking_data():
         df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
         status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
 
+    # --- LÓGICA CLAVE: CALCULAR Y ORDENAR AL CARGAR ---
+    if not df_ranking.empty:
+        df_ranking = calculate_and_sort_ranking(df_ranking)
+        
     return df_ranking, status_message
 
 @st.cache_data(ttl=3600)
@@ -255,8 +258,8 @@ def load_readiness_data():
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
-df_calendario_full = load_calendar_data() # Carga el DF completo para editar el calendario
-df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() # Filtramos para mostrar al atleta
+df_calendario_full = load_calendar_data() 
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
 df_pruebas_full, tests_status = load_tests_data() 
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
@@ -457,12 +460,34 @@ def save_calendar_data(df_edited):
         st.error(f"Error al guardar el calendario: {e}")
         return False
 
+# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
+def calculate_and_sort_ranking(df):
+    """Calcula los puntos y ordena el ranking por jerarquía de medallas."""
+    
+    # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
+    for col in ['Oros', 'Platas', 'Bronces']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+    # 2. Calcular los puntos (7 por Oro, 3 por Plata, 1 por Bronce)
+    df['Puntos'] = (df['Oros'] * 7) + (df['Platas'] * 3) + (df['Bronces'] * 1)
+    
+    # 3. Ordenación jerárquica: Oros > Platas > Bronces > Puntos
+    df_sorted = df.sort_values(
+        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
+        ascending=[False, False, False, False] # Mayor a menor para todos
+    ).copy()
+    
+    # 4. Re-asignar la posición
+    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
+    
+    return df_sorted
+# -----------------------------------------------------
+
 # --- NUEVAS FUNCIONES PARA EL RESALTADO ---
 
 def get_days_until(date_obj):
     """Calcula los días restantes hasta una fecha, o un gran número si ya pasó."""
     today = datetime.now().date()
-    # Asegurar que date_obj sea un objeto date
     if isinstance(date_obj, datetime):
         date_obj = date_obj.date()
         
@@ -475,14 +500,11 @@ def get_days_until(date_obj):
 def highlight_imminent_events(df):
     """Aplica estilo de fondo a filas con eventos a menos de 5 días."""
     
-    # La columna 'Days_Until' se calcula en el bloque principal y es necesaria en este DF
     if 'Days_Until' not in df.columns:
         return pd.DataFrame('', index=df.index, columns=df.columns)
         
-    # Máscara booleana: True si es inminente (0 a 5 días)
     mask = (df['Days_Until'] >= 0) & (df['Days_Until'] <= 5)
     
-    # Crear DataFrame de estilos
     styles = pd.DataFrame('', index=df.index, columns=df.columns)
     
     # Aplicar estilo: fondo verde claro de 'success'
@@ -856,15 +878,12 @@ with CALENDAR_TAB:
         st.subheader("Gestión de Cronograma (Vista Entrenador)")
         st.caption("⚠️ **Edita, añade o elimina filas directamente en la tabla. El 'chulito' en 'Habilitado' controla la visibilidad para los atletas.**")
         
-        # Copiamos el DF completo (booleano) para la edición
         df_calendar_edit = df_calendario_full.copy()
         
-        # Widget de edición para el calendario
         df_edited_calendar = st.data_editor(
             df_calendar_edit,
             num_rows="dynamic",
             column_config={
-                # DEFINICIÓN EXPLÍCITA DEL TIPO DE COLUMNA DE FECHA
                 "Fecha": st.column_config.DateColumn(
                     "Fecha", 
                     format="YYYY-MM-DD", 
@@ -881,7 +900,6 @@ with CALENDAR_TAB:
             key="calendar_data_editor"
         )
         
-        # Botón de guardado
         if st.button("💾 Guardar Cambios en Calendario y Aplicar", type="primary", key="save_calendar_data_btn"):
             df_edited_cleaned = df_edited_calendar.dropna(subset=['Evento', 'Fecha'], how='any')
 
@@ -893,7 +911,7 @@ with CALENDAR_TAB:
         
         st.markdown("---")
         st.subheader(f"Vista del Atleta")
-        eventos_mostrar = df_calendario.copy() # Usamos el DF ya filtrado globalmente
+        eventos_mostrar = df_calendario.copy()
         
     else:
         st.subheader(f"Próximos Eventos Habilitados para {atleta_actual}")
@@ -901,10 +919,8 @@ with CALENDAR_TAB:
     
     # --- LÓGICA DE RESALTADO (Fuera de la función de estilo) ---
     if not eventos_mostrar.empty:
-        # Calcular la columna temporal Days_Until
-        eventos_mostrar['Días restantes'] = eventos_mostrar['Fecha'].apply(get_days_until)
+        eventos_mostrar['Days_Until'] = eventos_mostrar['Fecha'].apply(get_days_until)
         
-        # Aplicar el estilo condicional (y se muestra la columna Days_Until)
         st.dataframe(
             eventos_mostrar.style.apply(highlight_imminent_events, axis=None), 
             use_container_width=True
@@ -912,7 +928,6 @@ with CALENDAR_TAB:
         
     else:
         st.info("No hay eventos habilitados para mostrar.")
-
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 4: PERFIL (Visible para todos)
@@ -1009,8 +1024,43 @@ with BIENESTAR_TAB:
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
+    st.caption("Ordenado por: **Oros > Platas > Bronces > Puntos**. (Oro=7, Plata=3, Bronce=1)")
     st.caption(f"Archivo de origen: **{RANKING_FILE}**")
     
+    if rol_actual == 'Entrenador':
+        st.subheader("Gestión de Ranking (Edición Directa)")
+        st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición y los Puntos se recalcularán automáticamente al guardar.**")
+        
+        # 1. Widget de edición (usando el DF ordenado actual)
+        df_edited_ranking = st.data_editor(
+            df_ranking, 
+            num_rows="dynamic",
+            column_config={
+                # Deshabilitar Posicion y Puntos porque se calculan automáticamente
+                "Posicion": st.column_config.NumberColumn("Posición", disabled=True),
+                "Puntos": st.column_config.NumberColumn("Puntos", disabled=True),
+                "Atleta": st.column_config.TextColumn("Atleta", required=True),
+                "Categoria": st.column_config.TextColumn("Categoría"),
+                "Oros": st.column_config.NumberColumn("🥇 Oros"),
+                "Platas": st.column_config.NumberColumn("🥈 Platas"),
+                "Bronces": st.column_config.NumberColumn("🥉 Bronces"),
+            },
+            use_container_width=True,
+            key="ranking_data_editor"
+        )
+        
+        # 2. Botón de guardado
+        if st.button("💾 Guardar y Recalcular Ranking", type="primary", key="save_ranking_data_btn"):
+            if save_ranking_data(df_edited_ranking):
+                st.success("✅ Ranking recalculado, ordenado y guardado con éxito. Recargando aplicación...")
+                st.rerun()
+            else:
+                st.error("❌ No se pudieron guardar los cambios en el ranking.")
+        
+        st.markdown("---")
+        st.subheader("Clasificación Actual")
+
+    # Muestra el ranking ordenado (usa df_ranking global, que ya está ordenado)
     st.dataframe(
         df_ranking, 
         use_container_width=True,
@@ -1024,6 +1074,7 @@ with RANKING_TAB:
         height=35 * (len(df_ranking) + 1)
     )
 
+    # Mostrar la posición del atleta actual de forma destacada
     current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
     if not current_athlete_rank.empty:
         rank_data = current_athlete_rank.iloc[0]
