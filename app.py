@@ -194,8 +194,8 @@ def calculate_and_sort_ranking(df):
         # Forzamos conversión a entero, tratando errores como 0 (fillna(0))
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
-    # 2. Calcular los puntos (7 por Oro, 3 por Plata, 1 por Bronce)
-    df['Puntos'] = (df['Oros'] * 7) + (df['Platas'] * 3) + (df['Bronces'] * 1)
+    # 2. Calcular los puntos (10 por Oro, 3 por Plata, 1 por Bronce)
+    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1) # <--- ORO = 10 PUNTOS
     
     # 3. Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro) > Puntos (Desempate)
     df_sorted = df.sort_values(
@@ -1046,7 +1046,7 @@ with BIENESTAR_TAB:
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
-    st.caption("Ordenado por: **Oros > Platas > Bronces > Puntos**. (Oro=7, Plata=3, Bronce=1)")
+    st.caption("Ordenado por: **Oros > Platas > Bronces > Puntos**. (Oro=10, Plata=3, Bronce=1)") # <--- DESCRIPCIÓN ACTUALIZADA
     st.caption(f"Archivo de origen: **{RANKING_FILE}**")
     
     if rol_actual == 'Entrenador':
