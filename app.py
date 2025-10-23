@@ -191,12 +191,13 @@ def calculate_and_sort_ranking(df):
     
     # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
     for col in ['Oros', 'Platas', 'Bronces']:
+        # Forzamos conversión a entero, tratando errores como 0 (fillna(0))
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
     # 2. Calcular los puntos (7 por Oro, 3 por Plata, 1 por Bronce)
     df['Puntos'] = (df['Oros'] * 7) + (df['Platas'] * 3) + (df['Bronces'] * 1)
     
-    # 3. Ordenación jerárquica: Oros > Platas > Bronces > Puntos
+    # 3. Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro) > Puntos (Desempate)
     df_sorted = df.sort_values(
         by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
         ascending=[False, False, False, False] # Mayor a menor para todos
