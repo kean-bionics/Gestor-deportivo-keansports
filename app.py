@@ -112,8 +112,8 @@ def load_calendar_data():
 @st.cache_data(ttl=3600)
 def load_tests_data():
     """
-    Carga la lista de pruebas activas para la calculadora.
-    Retorna el DataFrame COMPLETO (sin filtrar por Visible) y el mensaje de estado.
+    Carga la lista de pruebas activas.
+    Retorna el DataFrame COMPLETO para edición y el mensaje de estado.
     """
     status_message = None
     
@@ -134,7 +134,6 @@ def load_tests_data():
         status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
         return pd.DataFrame(), status_message 
 
-    # Convertir Visible a booleano, necesario para la edición y el filtrado posterior
     df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     
     # Retorna el DF completo (con la columna Visible booleana)
@@ -370,13 +369,14 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     except Exception as e:
         st.error(f"Error al guardar los datos de bienestar: {e}")
         return current_df, False
-    
+
 def save_tests_data(df_edited):
     """Guarda el DataFrame editado de pruebas activas en el archivo XLSX."""
+    
     # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
     df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
     
-    # Aseguramos que solo se guardan las columnas requeridas (por si se añade una columna temporal)
+    # Aseguramos que solo se guardan las columnas requeridas
     df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
     
     try:
@@ -487,6 +487,7 @@ if rol_actual == 'Entrenador':
         with col_recarga_pruebas:
             if st.button("Recargar Calendario", help="Recarga 'calendario_data.xlsx'."):
                 load_calendar_data.clear()
+                load_tests_data.clear()
                 st.rerun()
 
         st.markdown("---")
@@ -497,11 +498,11 @@ if rol_actual == 'Entrenador':
         
         st.markdown("---")
         st.subheader("Gestión de Pruebas (Modularidad de la Calculadora)")
-        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito.**")
+        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito. Puedes borrar filas haciendo clic en el número de fila.**")
         
-        # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE ---
+        # --- IMPLEMENTACIÓN CLAVE: TABLA EDITABLE CORREGIDA ---
         
-        # 1. Widget de edición (usa el DF completo)
+        # 1. Widget de edición
         df_edited = st.data_editor(
             df_pruebas_full, # Usamos el DF COMPLETO
             num_rows="dynamic", # Permite añadir y eliminar filas
@@ -511,9 +512,9 @@ if rol_actual == 'Entrenador':
                     help="Marca para mostrar la prueba en la calculadora.",
                     default=False,
                 ),
-                # Es buena práctica hacer las columnas de ID/ColumnaRM no editables para evitar errores
-                "ColumnaRM": st.column_config.Column("ColumnaRM", disabled=True), 
-                "NombrePrueba": st.column_config.Column("NombrePrueba", required=True),
+                # CORRECCIÓN CLAVE: Habilitar la edición de ColumnaRM
+                "ColumnaRM": st.column_config.Column("ColumnaRM"), 
+                "NombrePrueba": st.column_config.Column("NombrePrueba"),
             },
             use_container_width=True,
             key="tests_data_editor"
@@ -521,7 +522,10 @@ if rol_actual == 'Entrenador':
 
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="primary"):
-            if save_tests_data(df_edited):
+            # Asegurarse de que no haya filas completamente vacías
+            df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
+
+            if save_tests_data(df_edited_cleaned):
                 st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
                 st.rerun()
             else:
