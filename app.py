@@ -79,7 +79,7 @@ def load_data():
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
 
-    # --- Quitamos Nueva_Prueba de la carga para no depender de ella en el guardado principal ---
+    # Quitamos la columna temporal si existe para no interferir con la lógica de guardado
     if 'Nueva_Prueba' in df.columns:
         df = df.drop(columns=['Nueva_Prueba'])
     
@@ -95,17 +95,25 @@ def load_calendar_data():
         try:
             calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
             calendar_df.columns = calendar_df.columns.str.strip() 
+            
+            # --- SOLUCIÓN CLAVE: Convertir la columna Fecha a datetime.date ---
+            if 'Fecha' in calendar_df.columns:
+                calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
+            # -----------------------------------------------------------------
+
         except:
              excel_exists = False
 
     if not excel_exists or calendar_df.empty:
+        # Crea un DataFrame de ejemplo si no existe o hubo error
         data = {
             'Evento': ['Prueba de RM (Sentadilla/PB)', 'Evaluación de Resistencia', 'Reunión de Equipo'],
-            'Fecha': ['2025-11-01', '2025-11-15', '2025-11-20'],
+            'Fecha': [datetime.now().date() + timedelta(days=30), datetime.now().date() + timedelta(days=60), datetime.now().date() + timedelta(days=10)],
             'Detalle': ['Test de 1RM', 'Test de Cooper o 5K', 'Revisión de Mes'],
             'Habilitado': ['Sí', 'Sí', 'No']
         }
         calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
+        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date # Se añade conversión al crear
         calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
 
     # Convertir a booleano antes de retornar
@@ -141,6 +149,7 @@ def load_tests_data():
 
     df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     
+    # Retorna el DF completo (con la columna Visible booleana)
     return df_tests, status_message 
 
 @st.cache_data(ttl=3600)
@@ -246,7 +255,7 @@ def load_readiness_data():
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
-df_calendario_full = load_calendar_data() # Cargamos el DF completo para editar
+df_calendario_full = load_calendar_data() # Carga el DF completo para editar el calendario
 df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() # Filtramos para mostrar al atleta
 df_pruebas_full, tests_status = load_tests_data() 
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
@@ -351,9 +360,7 @@ def save_main_data(df_edited):
         df_edited.columns = df_edited.columns.str.strip()
         df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
-        # --- Revertimos: Ya no necesitamos la lógica de Nueva_Prueba aquí ---
-        if 'Nueva_Prueba' in df_edited.columns:
-            df_edited = df_edited.drop(columns=['Nueva_Prueba'])
+        # [CORRECCIÓN CLAVE]: Ya no necesitamos la lógica de Nueva_Prueba aquí.
         
         # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
         if 'Última_Fecha' in df_edited.columns:
@@ -431,13 +438,11 @@ def save_tests_data(df_edited):
         st.error(f"Error al guardar las pruebas: {e}")
         return False
 
-# --- NUEVA FUNCIÓN PARA GUARDAR EL CALENDARIO ---
 def save_calendar_data(df_edited):
     """Guarda el DataFrame editado de calendario en el archivo XLSX."""
-    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') # Limpiar filas sin datos esenciales
-
     # 1. Aseguramos que la columna 'Habilitado' tenga 'Sí' o 'No' al guardar en Excel
-    df_edited_cleaned['Habilitado'] = df_edited_cleaned['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
+    df_edited['Habilitado'] = df_edited['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
+    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') # Limpiar filas sin datos esenciales
     
     # 2. Aseguramos que solo se guardan las columnas requeridas
     df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
@@ -808,7 +813,12 @@ with CALENDAR_TAB:
             df_calendar_edit,
             num_rows="dynamic",
             column_config={
-                "Fecha": st.column_config.DateColumn("Fecha", format="YYYY-MM-DD", required=True),
+                # DEFINICIÓN EXPLÍCITA DEL TIPO DE COLUMNA DE FECHA
+                "Fecha": st.column_config.DateColumn(
+                    "Fecha", 
+                    format="YYYY-MM-DD", 
+                    required=True
+                ),
                 "Evento": st.column_config.TextColumn("Evento", required=True),
                 "Habilitado": st.column_config.CheckboxColumn(
                     "Habilitado",
