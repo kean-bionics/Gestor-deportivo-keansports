@@ -79,7 +79,6 @@ def load_data():
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
 
-    # Quitamos la columna temporal si existe para no interferir con la lógica de guardado
     if 'Nueva_Prueba' in df.columns:
         df = df.drop(columns=['Nueva_Prueba'])
     
@@ -110,7 +109,7 @@ def load_calendar_data():
             'Habilitado': ['Sí', 'Sí', 'No']
         }
         calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
-        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
+        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date 
         calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
 
     if 'Habilitado' in calendar_df.columns:
@@ -274,8 +273,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-# df_readiness ya no se usa globalmente para evitar que se reinicie
-df_readiness_placeholder, readiness_status = load_readiness_data()
+df_readiness, readiness_status = load_readiness_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -937,6 +935,7 @@ with CALENDAR_TAB:
 # ----------------------------------------------------------------------------------
 with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
+    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
 
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
 
@@ -967,7 +966,62 @@ with PERFIL_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: RANKING (Visible para todos)
+## PESTAÑA 5: BIENESTAR (NUEVA PESTAÑA)
+# ----------------------------------------------------------------------------------
+with BIENESTAR_TAB:
+    st.header("🧘 Seguimiento de Bienestar y Disposición")
+    st.caption("Registra tu estado subjetivo diario para optimizar tu entrenamiento.")
+
+    st.subheader("Registro Diario")
+    
+    if 'df_readiness_display' not in st.session_state:
+        st.session_state['df_readiness_display'] = df_readiness.copy()
+
+    with st.form("readiness_form", clear_on_submit=True):
+        fecha_registro = st.date_input("Fecha de Registro:", datetime.now().date())
+        
+        col_sleep, col_pain, col_ready = st.columns(3)
+        
+        with col_sleep:
+            sueno = st.slider("1. Calidad del Sueño:", min_value=1, max_value=5, value=3, help="1=Pésimo, 5=Excelente")
+        
+        with col_pain:
+            molestias = st.slider("2. Nivel de Molestias/Dolor:", min_value=1, max_value=5, value=1, help="1=Ninguna, 5=Severa")
+            
+        with col_ready:
+            disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=3, help="1=Baja, 5=Alta")
+            
+        submitted = st.form_submit_button("Guardar Registro Diario")
+        
+        if submitted:
+            updated_df, success = save_readiness_data(atleta_actual, fecha_registro, sueno, molestias, disposicion)
+            
+            if success:
+                st.success("¡Registro de bienestar guardado exitosamente! Actualizando historial...")
+                st.session_state['df_readiness_display'] = updated_df
+            
+
+    st.markdown("---")
+    st.subheader("Historial de Bienestar")
+
+    df_atleta_readiness = st.session_state['df_readiness_display'][st.session_state['df_readiness_display']['Atleta'] == atleta_actual].sort_values(by='Fecha', ascending=False)
+    
+    if df_atleta_readiness.empty:
+        st.info("No tienes registros de bienestar aún.")
+    else:
+        st.dataframe(
+            df_atleta_readiness[['Fecha', 'Sueño', 'Molestias', 'Disposicion']].head(10), 
+            use_container_width=True
+        )
+        
+        if rol_actual == 'Entrenador':
+            st.markdown("---")
+            st.subheader("Datos Crudos (Vista Entrenador)")
+            st.dataframe(st.session_state['df_readiness_display'], use_container_width=True)
+
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 6: RANKING (Visible para todos)
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
