@@ -156,6 +156,7 @@ def load_perfil_data():
         'Fecha_Nacimiento': ['1994-01-01', '1999-05-10', '2002-01-20'],
         'Documento': ['999', '12345678', '87654321'],
         'Altura_cm': [180, 178, 165],
+        'Sexo': ['Hombre', 'Hombre', 'Mujer'], # Agregada columna Sexo para TMB
         'Posicion': ['Entrenador', 'Delantero', 'Defensora'],
         'Email': ['tu@mail.com', 'juan@mail.com', 'ana@mail.com']
     }
@@ -165,6 +166,11 @@ def load_perfil_data():
         try:
             df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
             df_perfil.columns = df_perfil.columns.str.strip()
+            
+            # Añadir 'Sexo' si no existe
+            if 'Sexo' not in df_perfil.columns:
+                 df_perfil['Sexo'] = 'Hombre'
+                 
         except:
              excel_exists = False
 
@@ -518,6 +524,16 @@ def highlight_imminent_events(df):
     
     return styles
 
+# --- FUNCIONES NUEVAS PARA CÁLCULO DE NUTRICIÓN ---
+
+def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
+    """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
+    if sexo == 'Hombre':
+        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) + 5
+    else: # Mujer
+        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) - 161
+    return round(tmb)
+
 # -------------------------------------------
 
 
@@ -576,7 +592,7 @@ if not st.session_state['logged_in']:
 # --- CONTENIDO DE LA APLICACIÓN (POST-LOGIN) ---
 # ----------------------------------------------------------------------
 
-st.title("💪Rendimiento Manager - Hapkido deportivo")
+st.title("💪 RM & Rendimiento Manager")
 logout() 
 
 if st.session_state['logged_in']:
@@ -586,14 +602,27 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (CORREGIDA: AÑADIMOS ACOND_TAB)
+# Definición de pestañas (AGREGAMOS GESTION_PESO_TAB y RECUPERACION_TAB)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, RANKING_TAB = st.tabs([
-        "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🏆 Ranking"
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
+        "📊 Vista Entrenador (Datos)", 
+        "🧮 Calculadora de Carga", 
+        "📅 Calendario", 
+        "👤 Perfil", 
+        "🏃 Acondicionamiento", 
+        "⚖️ Gestión de Peso", # Nueva
+        "🌡️ Recuperación", # Nueva
+        "🏆 Ranking"
     ])
 else:
-    tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, RANKING_TAB = st.tabs([
-        "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🏆 Ranking"
+    tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
+        "🧮 Calculadora de Carga", 
+        "📅 Calendario", 
+        "👤 Perfil", 
+        "🏃 Acondicionamiento", 
+        "⚖️ Gestión de Peso", # Nueva
+        "🌡️ Recuperación", # Nueva
+        "🏆 Ranking"
     ])
 
 # ----------------------------------------------------------------------------------
@@ -873,7 +902,7 @@ with calc_tab:
 # ----------------------------------------------------------------------------------
 with CALENDAR_TAB:
     st.header("📅 Calendario de Pruebas y Actividades")
-    st.caption(f"Archivo de origen: keansports derechos reservados")
+    st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
     
     if rol_actual == 'Entrenador':
         st.subheader("Gestión de Cronograma (Vista Entrenador)")
@@ -935,7 +964,7 @@ with CALENDAR_TAB:
 # ----------------------------------------------------------------------------------
 with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-    st.caption(f"Archivo de origen: keansports derechos reservados")
+    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
 
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
 
@@ -966,7 +995,7 @@ with PERFIL_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: ACONDICIONAMIENTO (NUEVA PESTAÑA)
+## PESTAÑA 5: ACONDICIONAMIENTO 
 # ----------------------------------------------------------------------------------
 with ACOND_TAB:
     st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
@@ -978,7 +1007,7 @@ with ACOND_TAB:
         edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
         
         # Fórmula FC Máx: Tanaka (208 - 0.7 * edad)
-        fc_max_estimada = round(208 - (0.7 * edad)) if not pd.isna(edad) else "N/D" # <--- FÓRMULA DE TANAKA
+        fc_max_estimada = round(208 - (0.7 * edad)) if not pd.isna(edad) else "N/D"
 
         st.subheader("1. Frecuencia Cardíaca Máxima (FC Máx) y Zonas")
         
@@ -1059,9 +1088,175 @@ with ACOND_TAB:
     else:
         st.info("Ingresa los datos de la prueba para calcular el VAM.")
 
+# ----------------------------------------------------------------------------------
+## PESTAÑA 6: GESTIÓN DE PESO (NUEVA PESTAÑA)
+# ----------------------------------------------------------------------------------
+
+with GESTION_PESO_TAB:
+    st.header("⚖️ Gestión de Peso y Nutrición")
+    
+    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
+    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
+
+    # Extracción de datos con manejo de NaNs/None
+    peso_kg = datos_rm.get('PesoCorporal', 0) if datos_rm is not None else 0
+    altura_cm = datos_perfil.get('Altura_cm', 0) if datos_perfil is not None else 0
+    edad_anos = pd.to_numeric(datos_perfil.get('Edad', 0), errors='coerce', downcast='integer') if datos_perfil is not None else 0
+    sexo = datos_perfil.get('Sexo', 'Hombre') if datos_perfil is not None else 'Hombre'
+
+
+    st.subheader("1. Cálculo de Tasa Metabólica Basal ($\text{TMB}$)")
+    
+    col_peso, col_alt, col_edad_sexo = st.columns(3)
+    
+    with col_peso:
+        peso_input = st.number_input(
+            "Peso Corporal (kg):", 
+            min_value=0.0, 
+            value=float(peso_kg) if pd.notna(peso_kg) and peso_kg > 0 else 70.0, 
+            step=0.5
+        )
+    with col_alt:
+        altura_input = st.number_input(
+            "Altura (cm):", 
+            min_value=0.0, 
+            value=float(altura_cm) if pd.notna(altura_cm) and altura_cm > 0 else 175.0, 
+            step=1.0
+        )
+    with col_edad_sexo:
+        edad_input = st.number_input(
+            "Edad (años):", 
+            min_value=1, 
+            value=int(edad_anos) if pd.notna(edad_anos) and edad_anos > 0 else 25, 
+            step=1
+        )
+        sexo_input = st.selectbox("Sexo:", options=['Hombre', 'Mujer'], index=0 if sexo == 'Hombre' else 1)
+        
+    
+    if peso_input > 0 and altura_input > 0 and edad_input > 0:
+        tmb_calc = calculate_tmb_mifflin(peso_input, altura_input, edad_input, sexo_input)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.metric(
+            "Tasa Metabólica Basal ($\text{TMB}$)", 
+            f"**{tmb_calc} kcal/día** (Fórmula de Mifflin-St Jeor)"
+        )
+
+        st.markdown("---")
+        st.subheader("2. Gasto Calórico Total y Objetivos")
+        
+        col_act, col_obj = st.columns(2)
+        
+        with col_act:
+            factor_actividad = st.selectbox(
+                "Nivel de Actividad:",
+                options={
+                    "Sedentario (poco o ningún ejercicio)": 1.2,
+                    "Ligero (ejercicio 1-3 días/sem)": 1.375,
+                    "Moderado (ejercicio 3-5 días/sem)": 1.55,
+                    "Alto (ejercicio 6-7 días/sem)": 1.725,
+                    "Muy Alto (entrenamientos 2 veces/día)": 1.9
+                },
+                format_func=lambda x: x.split(" (")[0]
+            )
+        
+        with col_obj:
+            objetivo_calorico = st.selectbox(
+                "Objetivo de Peso:",
+                options={
+                    "Mantenimiento": 0,
+                    "Definición (Bajar peso)": -500,
+                    "Volumen (Subir peso)": 500
+                },
+                format_func=lambda x: x
+            )
+            
+        get_calc = round(tmb_calc * factor_actividad)
+        calorias_objetivo = get_calc + objetivo_calorico
+
+        st.metric(
+            "Gasto Energético Total ($\text{GET}$)",
+            f"{get_calc} kcal/día"
+        )
+        st.metric(
+            "Objetivo Calórico Diario",
+            f"**{calorias_objetivo} kcal/día**"
+        )
+
+        st.markdown("---")
+        st.subheader("3. Hidratación Sugerida 💧")
+        
+        agua_litros = round(peso_input * 0.035, 1) # 35ml por kg de peso
+        
+        st.metric(
+            "Agua Sugerida",
+            f"**{agua_litros} Litros/día** (35 ml por kg de peso)"
+        )
+        
+        st.caption("Ajustar este valor al alza en días de entrenamiento intenso o calor.")
+        
+    else:
+        st.warning("Ingresa tu Peso, Altura y Edad para calcular tus métricas nutricionales.")
+
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 6: RANKING (Visible para todos)
+## PESTAÑA 7: RECUPERACIÓN (NUEVA PESTAÑA)
+# ----------------------------------------------------------------------------------
+
+with RECUPERACION_TAB:
+    st.header("🌡️ Protocolos de Recuperación y Movilidad")
+    st.markdown("---")
+
+    st.subheader("1. Guía Rápida de Termoterapia y $\text{Crioterapia}$")
+    st.caption("Métodos de recuperación activa para reducir la inflamación y acelerar la reparación muscular.")
+    
+    col_crio, col_termo = st.columns(2)
+    
+    with col_crio:
+        st.error("Protocolo de Baño de Hielo ($\text{Crioterapia}$)")
+        st.markdown("""
+        - **Objetivo:** Reducción de la inflamación muscular post-entrenamiento intenso.
+        - **Temperatura:** $10 \text{ °C}$ - $15 \text{ °C}$
+        - **Duración:** **$10 \text{ minutos}$** (No exceder $\text{15 minutos}$)
+        - **Timing:** Inmediatamente o hasta **$1 \text{ hora}$** después del ejercicio.
+        - **Advertencia:** Evitar después de entrenamientos de fuerza pura/hipertrofia, ya que puede limitar las adaptaciones.
+        """)
+        
+    with col_termo:
+        st.warning("Protocolo de Sauna/Calor ($\text{Termoterapia}$)")
+        st.markdown("""
+        - **Objetivo:** Relajación, aumento del flujo sanguíneo y desintoxicación.
+        - **Temperatura:** $70 \text{ °C}$ - $90 \text{ °C}$
+        - **Duración:** **$15 \text{ - } 20 \text{ minutos}$**
+        - **Timing:** En días de descanso o varias horas después de un entrenamiento para promover la relajación.
+        - **Advertencia:** Asegurarse de estar bien hidratado antes, durante y después del uso.
+        """)
+
+    st.markdown("---")
+    st.subheader("2. Pautas de Sueño para el Atleta de Combate 😴")
+    st.caption("El sueño es tu herramienta de recuperación más poderosa.")
+    
+    st.info("""
+    - **Duración Ideal:** **$8 \text{ - } 10 \text{ horas}$** por noche.
+    - **Consistencia:** Mantener horarios de sueño regulares, incluso los fines de semana.
+    - **Ambiente:** Dormir en una habitación oscura, fresca y tranquila.
+    - **Cafeína/Comidas:** Evitar cafeína y comidas pesadas **$3 \text{ horas}$** antes de acostarse.
+    - **Dispositivos:** Evitar pantallas (teléfono, tablet) al menos **$30 \text{ minutos}$** antes de dormir (Luz Azul).
+    """)
+    
+    st.markdown("---")
+    st.subheader("3. Enfoque de Movilidad y Estiramiento")
+    st.caption("Movilidad diaria para prevenir lesiones en áreas clave de combate.")
+    
+    st.success("""
+    - **Movilidad Dinámica:** Realizar antes de cada entrenamiento para preparar las articulaciones. (Ej: Rotaciones de hombros, balanceo de piernas).
+    - **Movilidad Estática:** Realizar *solo* después del entrenamiento o en días de descanso activo (nunca antes de la fuerza o potencia).
+    - **Zonas Focales:** Prioridad en **Caderas** (flexores/rotadores), **Hombros** (manguito rotador) y **Columna Torácica** (rotación).
+    """)
+
+
+# ----------------------------------------------------------------------------------
+## PESTA 8: RANKING (Visible para todos)
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
