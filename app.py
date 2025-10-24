@@ -5,6 +5,9 @@ import os
 import io
 from PIL import Image
 from datetime import datetime, timedelta
+# Importamos la librería necesaria para la conexión segura
+from streamlit_gsheets import GSheetsConnection 
+import json # Para manejar el JSON de las credenciales
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -21,10 +24,10 @@ PRUEBAS_FILE = 'pruebas_activas.xlsx'
 
 # Archivo 4: Perfiles de Atletas
 PERFILES_FILE = 'perfiles.xlsx'
+# Note: Se eliminan las listas de REQUIRED_COLUMNS para los archivos que migran, ya que Sheets los manejará
 
 # Archivo 5: Ranking
 RANKING_FILE = 'ranking.xlsx'
-# --- CAMBIO CLAVE: Eliminación de 'Puntos' de la estructura requerida ---
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
 # Archivo 6: Readiness
@@ -35,176 +38,126 @@ READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposi
 LOGO_PATH = 'logo.png' 
 
 
-# --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ) ---
+# --- CONFIGURACIÓN DE GOOGLE SHEETS (CRÍTICO) ---
+# REEMPLAZA LOS VALORES DE EJEMPLO CON TUS URLs REALES
+GS_ATLETAS_URL = "URL_DE_TU_HOJA_ATLETAS_AQUI" 
+GS_PERFILES_URL = "URL_DE_TU_HOJA_PERFILES_AQUI"
+GS_RANKING_URL = "URL_DE_TU_HOJA_RANKING_AQUI"
+GS_READINESS_URL = "URL_DE_TU_HOJA_READINESS_AQUI"
+GS_CALENDAR_URL = "URL_DE_TU_HOJA_CALENDARIO_AQUI" 
+# ------------------------------------------------
 
-@st.cache_data(ttl=3600) 
+
+# --- FUNCIÓN DE CONEXIÓN A GOOGLE SHEETS (CACHEADA) ---
+@st.cache_resource(ttl=3600)
+def get_gsheets_connection():
+    """Establece y cachea la conexión segura a Google Sheets."""
+    try:
+        # Aquí Streamlit usa las credenciales del secreto 'gservice_account'
+        conn = st.connection("gsheets", type=GSheetsConnection) 
+        return conn
+    except Exception as e:
+        st.error(f"Error crítico de conexión a Google Sheets. Revisa la configuración de Secrets: {e}")
+        return None
+
+
+# --- 2. FUNCIONES DE CARGA DE DATOS (MIGRADO A SHEETS) ---
+
+@st.cache_data(ttl=300) # Carga más frecuente para datos principales
 def load_data():
-    """Carga los datos de los atletas. Si no existe, lo crea."""
-    df = pd.DataFrame()
-    excel_exists = os.path.exists(EXCEL_FILE)
+    """Carga los datos de los atletas desde Google Sheets."""
+    conn = get_gsheets_connection()
     status_message = None
     
-    if excel_exists:
-        try:
-            df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
-            
-            df.columns = df.columns.str.strip() 
-            
-            missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-            if missing_cols:
-                status_message = f"El archivo Excel de atletas existe, pero faltan columnas: {', '.join(missing_cols)}. Se añadirán vacías."
-                for col in missing_cols:
-                    df[col] = None
-                    
-        except Exception as e:
-            status_message = f"Error al leer el archivo Excel de atletas ({e}). Se creará un archivo nuevo de ejemplo."
-            excel_exists = False
+    if not conn:
+        return pd.DataFrame(), "Error: No se pudo establecer la conexión con Google Sheets."
 
-    if not excel_exists or df.empty:
-        status_message = f"Creando el archivo '{EXCEL_FILE}' de ejemplo con la estructura inicial."
-        data = {
-            'ID': [1, 2, 3],
-            'Atleta': ['Juan Pérez', 'Ana Gómez', 'Tu Nombre'],
-            'Contraseña': ['1234', '5678', 'admin'], 
-            'Rol': ['Atleta', 'Atleta', 'Entrenador'], 
-            'Sentadilla_RM': [140.0, 95.0, 160.0],
-            'PressBanca_RM': [100.0, 55.0, 115.0],
-            'PesoCorporal': [80.0, 60.0, 90.0],
-            'Última_Fecha': ['2023-10-15', '2023-10-10', '2023-10-12']
-        }
-        df = pd.DataFrame(data, columns=REQUIRED_COLUMNS) 
-        
-        df.to_excel(EXCEL_FILE, index=False, engine='openpyxl') 
-        status_message += " Archivo creado con éxito."
-        
-    if 'Última_Fecha' in df.columns:
-        df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
+    try:
+        df = conn.read(spreadsheet=GS_ATLETAS_URL, ttl=300)
+        df.columns = df.columns.str.strip() 
 
-    # Quitamos la columna temporal si existe para no interferir con la lógica de guardado
-    if 'Nueva_Prueba' in df.columns:
-        df = df.drop(columns=['Nueva_Prueba'])
-    
-    return df, status_message 
+        if df.empty or 'Atleta' not in df.columns:
+             status_message = "ADVERTENCIA: La hoja de atletas está vacía o no tiene la columna 'Atleta'."
+             # Se asegura que el DF tenga al menos las columnas para evitar NameError en el editor
+             df = pd.DataFrame(columns=df.columns if not df.empty else REQUIRED_COLUMNS) 
+        
+        if 'Última_Fecha' in df.columns:
+            df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
+            
+        return df, "Datos de atletas cargados de Google Sheets." 
+        
+    except Exception as e:
+        return pd.DataFrame(), f"Error al cargar datos de Sheets: {e}"
 
 @st.cache_data(ttl=600)
 def load_calendar_data():
-    """Carga los datos del calendario desde el archivo Excel."""
-    calendar_df = pd.DataFrame()
-    excel_exists = os.path.exists(CALENDAR_FILE)
+    """Carga los datos del calendario desde Google Sheets."""
+    conn = get_gsheets_connection()
+    if not conn: return pd.DataFrame(), "Error de conexión."
     
-    if excel_exists:
-        try:
-            calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
-            calendar_df.columns = calendar_df.columns.str.strip() 
-            
-            # --- SOLUCIÓN CLAVE: Convertir la columna Fecha a datetime.date ---
-            if 'Fecha' in calendar_df.columns:
-                calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
-            # -----------------------------------------------------------------
+    try:
+        calendar_df = conn.read(spreadsheet=GS_CALENDAR_URL, ttl=300)
+        calendar_df.columns = calendar_df.columns.str.strip() 
+        
+        if 'Fecha' in calendar_df.columns:
+            calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
 
-        except:
-             excel_exists = False
+        if 'Habilitado' in calendar_df.columns:
+            calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
 
-    if not excel_exists or calendar_df.empty:
-        # Crea un DataFrame de ejemplo si no existe o hubo error
-        data = {
-            'Evento': ['Prueba de RM (Sentadilla/PB)', 'Evaluación de Resistencia', 'Reunión de Equipo'],
-            'Fecha': [datetime.now().date() + timedelta(days=30), datetime.now().date() + timedelta(days=60), datetime.now().date() + timedelta(days=10)],
-            'Detalle': ['Test de 1RM', 'Test de Cooper o 5K', 'Revisión de Mes'],
-            'Habilitado': ['Sí', 'Sí', 'No']
-        }
-        calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
-        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date # Se añade conversión al crear
-        calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
-
-    # Convertir a booleano antes de retornar
-    if 'Habilitado' in calendar_df.columns:
-        calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
-
-    return calendar_df
+        return calendar_df, None
+    except Exception as e:
+        return pd.DataFrame(), f"Error al cargar calendario de Sheets: {e}"
 
 @st.cache_data(ttl=3600)
 def load_tests_data():
-    """
-    Carga la lista de pruebas activas.
-    Retorna el DataFrame COMPLETO para edición y el mensaje de estado.
-    """
+    """Carga la lista de pruebas activas desde Google Sheets."""
+    conn = get_gsheets_connection()
     status_message = None
-    
-    if not os.path.exists(PRUEBAS_FILE):
-        data = {
-            'NombrePrueba': ['Sentadilla', 'Press Banca', 'Peso Muerto', 'Otro'],
-            'ColumnaRM': ['Sentadilla_RM', 'PressBanca_RM', 'PesoMuerto_RM', 'N/A'],
-            'Visible': ['Sí', 'Sí', 'No', 'Sí']
-        }
-        df_tests = pd.DataFrame(data)
-        df_tests.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
-        status_message = f"Archivo '{PRUEBAS_FILE}' creado con éxito."
+    if not conn: return pd.DataFrame(), "Error de conexión."
     
     try:
-        df_tests = pd.read_excel(PRUEBAS_FILE, engine='openpyxl')
+        df_tests = conn.read(spreadsheet=GS_TESTS_URL, ttl=3600) # Asumiendo que esta URL se definió en las constantes
         df_tests.columns = df_tests.columns.str.strip()
+        
+        df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
+        
+        return df_tests, "Pruebas cargadas de Sheets."
     except Exception as e:
-        status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
-        return pd.DataFrame(), status_message 
-
-    df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
-    
-    # Retorna el DF completo (con la columna Visible booleana)
-    return df_tests, status_message 
+        return pd.DataFrame(), f"Error al cargar pruebas de Sheets: {e}"
 
 @st.cache_data(ttl=3600)
 def load_perfil_data():
-    """Carga los datos de perfil de los atletas desde el archivo Excel. Si no existe, lo crea."""
-    df_perfil = pd.DataFrame()
-    excel_exists = os.path.exists(PERFILES_FILE)
+    """Carga los datos de perfil de los atletas desde Google Sheets."""
+    conn = get_gsheets_connection()
     status_message = None
-
-    DEFAULT_PROFILE_DATA = {
-        'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez'],
-        'Edad': [30, 25, 22],
-        'Fecha_Nacimiento': ['1994-01-01', '1999-05-10', '2002-01-20'],
-        'Documento': ['999', '12345678', '87654321'],
-        'Altura_cm': [180, 178, 165],
-        'Posicion': ['Entrenador', 'Delantero', 'Defensora'],
-        'Email': ['tu@mail.com', 'juan@mail.com', 'ana@mail.com']
-    }
-    REQUIRED_PROFILE_COLUMNS = list(DEFAULT_PROFILE_DATA.keys())
+    if not conn: return pd.DataFrame(), "Error de conexión."
     
-    if excel_exists:
-        try:
-            df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
-            df_perfil.columns = df_perfil.columns.str.strip()
-        except:
-             excel_exists = False
-
-    if not excel_exists or df_perfil.empty:
-        df_perfil = pd.DataFrame(DEFAULT_PROFILE_DATA, columns=REQUIRED_PROFILE_COLUMNS) 
-        df_perfil.to_excel(PERFILES_FILE, index=False, engine='openpyxl') 
-        status_message = f"Archivo '{PERFILES_FILE}' creado con éxito."
-
-    return df_perfil, status_message
+    try:
+        df_perfil = conn.read(spreadsheet=GS_PERFILES_URL, ttl=3600)
+        df_perfil.columns = df_perfil.columns.str.strip()
+        
+        return df_perfil, "Perfiles cargados de Sheets."
+    except Exception as e:
+        return pd.DataFrame(), f"Error al cargar perfiles de Sheets: {e}"
 
 
 # --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
 def calculate_and_sort_ranking(df):
     """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
     
-    # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
     for col in ['Oros', 'Platas', 'Bronces']:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
-    # 2. Calcular los puntos (Oro=10, Plata=3, Bronce=1)
+    # Calcular los puntos (Oro=10, Plata=3, Bronce=1)
     df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
     
-    # 3. Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro)
-    # NOTA: Los 'Puntos' quedan como desempate final, pero la clasificación se basa en la jerarquía de medallas.
+    # Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro) > Puntos (Desempate)
     df_sorted = df.sort_values(
         by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
-        ascending=[False, False, False, False] # Mayor a menor para todos
+        ascending=[False, False, False, False]
     ).copy()
     
-    # 4. Re-asignar la posición
     df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
     
     return df_sorted
@@ -212,83 +165,53 @@ def calculate_and_sort_ranking(df):
 
 @st.cache_data(ttl=3600)
 def load_ranking_data():
-    """Carga los datos de ranking, los calcula, ordena y crea el archivo si no existe."""
-    df_ranking = pd.DataFrame()
+    """Carga los datos de ranking desde Google Sheets, los calcula y ordena."""
+    conn = get_gsheets_connection()
     status_message = None
-    excel_exists = os.path.exists(RANKING_FILE)
-    
-    if excel_exists:
-        try:
-            df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
-            df_ranking.columns = df_ranking.columns.str.strip() 
-            
-            # Ajustamos la verificación de columnas requeridas para el nuevo set
-            missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
-            if missing_cols:
-                 status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
-                 # Creamos un DF vacío con todas las columnas, incluyendo Puntos, para evitar fallos.
-                 full_ranking_cols = RANKING_REQUIRED_COLUMNS + ['Puntos'] 
-                 df_ranking = pd.DataFrame(columns=full_ranking_cols) 
-            
-        except:
-             excel_exists = False
+    if not conn: return pd.DataFrame(), "Error de conexión."
 
-    if not excel_exists or df_ranking.empty:
-        data = {
-            'Posicion': [1, 2, 3, 4],
-            'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez', 'Pedro Lopez'],
-            'Categoria': ['Senior', 'Junior', 'Senior', 'Junior'],
-            'Oros': [5, 2, 1, 0],
-            'Platas': [2, 3, 0, 1],
-            'Bronces': [1, 0, 1, 2],
-        }
-        # Creamos un DF de ejemplo solo con las columnas base
-        df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
-        df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
-        status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
-
-    # --- LÓGICA CLAVE: CALCULAR Y ORDENAR AL CARGAR ---
-    if not df_ranking.empty:
-        # Aseguramos que la columna 'Puntos' exista antes de ordenar (la crea si no existe)
-        df_ranking = calculate_and_sort_ranking(df_ranking)
+    try:
+        df_ranking = conn.read(spreadsheet=GS_RANKING_URL, ttl=300)
+        df_ranking.columns = df_ranking.columns.str.strip() 
         
-    return df_ranking, status_message
+        if df_ranking.empty:
+             status_message = "ADVERTENCIA: La hoja de ranking está vacía."
+             # Aseguramos que el DF tenga al menos las columnas para evitar fallos
+             df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS + ['Puntos']) 
+
+        if not df_ranking.empty:
+            df_ranking = calculate_and_sort_ranking(df_ranking)
+        
+        return df_ranking, "Ranking cargado de Sheets."
+    except Exception as e:
+        return pd.DataFrame(), f"Error al cargar ranking de Sheets: {e}"
 
 @st.cache_data(ttl=3600)
 def load_readiness_data():
-    """Carga los datos de bienestar/readiness desde el archivo Excel."""
-    df_readiness = pd.DataFrame()
-    excel_exists = os.path.exists(READINESS_FILE)
+    """Carga los datos de bienestar/readiness desde Google Sheets."""
+    conn = get_gsheets_connection()
     status_message = None
+    if not conn: return pd.DataFrame(), "Error de conexión."
 
-    if excel_exists:
-        try:
-            df_readiness = pd.read_excel(READINESS_FILE, engine='openpyxl')
-            df_readiness.columns = df_readiness.columns.str.strip()
-            df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
-        except:
-             excel_exists = False
+    try:
+        df_readiness = conn.read(spreadsheet=GS_READINESS_URL, ttl=300)
+        df_readiness.columns = df_readiness.columns.str.strip()
+        
+        if df_readiness.empty:
+             # Asegura que las columnas existan
+             df_readiness = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS) 
 
-    if not excel_exists or df_readiness.empty:
-        data = {
-            'Atleta': ['Juan Pérez', 'Juan Pérez', 'Ana Gómez'],
-            'Fecha': [datetime.now().date() - timedelta(days=2), datetime.now().date() - timedelta(days=1), datetime.now().date() - timedelta(days=1)],
-            'Sueño': [4, 3, 5],
-            'Molestias': [2, 3, 1],
-            'Disposicion': [5, 4, 5]
-        }
-        df_readiness = pd.DataFrame(data, columns=READINESS_REQUIRED_COLUMNS) 
         df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
-        df_readiness.to_excel(READINESS_FILE, index=False, engine='openpyxl') 
-        status_message = f"Archivo '{READINESS_FILE}' creado con éxito."
-    
-    return df_readiness, status_message
+        
+        return df_readiness, "Datos de bienestar cargados de Sheets."
+    except Exception as e:
+        return pd.DataFrame(), f"Error al cargar bienestar de Sheets: {e}"
 
 
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
-df_calendario_full = load_calendar_data() 
+df_calendario_full, _ = load_calendar_data() # No necesitamos el status del calendario
 df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
 df_pruebas_full, tests_status = load_tests_data() 
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
@@ -297,137 +220,50 @@ df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
 
 
-# --- 4. FUNCIONES AUXILIARES ---
-
-def check_login(username, password):
-    """Verifica el usuario y contraseña contra el DataFrame."""
-    user_row = df_atletas[df_atletas['Atleta'].str.lower() == username.lower()]
-    
-    if not user_row.empty:
-        if user_row['Contraseña'].iloc[0] == password:
-            return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
-    return False, None, None
-
-def login_form():
-    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
-    with st.form("login_form"):
-        username = st.text_input("Usuario (Nombre del Atleta)")
-        password = st.text_input("Contraseña", type="password")
-        submitted = st.form_submit_button("Entrar")
-
-        if submitted:
-            success, rol, atleta_nombre = check_login(username, password)
-            if success:
-                st.session_state['logged_in'] = True
-                st.session_state['rol'] = rol
-                st.session_state['atleta_nombre'] = atleta_nombre
-                st.success(f"Bienvenido, {atleta_nombre} ({rol})!")
-                st.rerun() 
-            else:
-                st.error("Usuario o Contraseña incorrectos.")
-
-def logout():
-    """Cierra la sesión del usuario."""
-    if 'logged_in' in st.session_state and st.session_state['logged_in']:
-        st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.clear())
-        st.sidebar.markdown(f"**Conectado como:** {st.session_state['atleta_nombre']}")
-        st.sidebar.markdown(f"**Rol:** {st.session_state['rol']}")
-
-def calcular_porcentaje_rm(rm_value, porcentaje):
-    """Calcula el peso basado en un porcentaje del RM, redondeando a 0.5 kg."""
-    if rm_value > 0 and 0 <= porcentaje <= 100:
-        peso = rm_value * (porcentaje / 100)
-        return round(peso * 2) / 2
-    return 0
-
-# Relación inversa RIR a Porcentaje de 1RM
-RIR_TO_PERCENT = {
-    0: (90, 100), 
-    1: (87, 95),  
-    2: (80, 87),  
-    3: (70, 80),  
-    4: (65, 75),  
-}
-
-def calcular_carga_por_rir(rm_value, rir):
-    """Calcula el peso óptimo basado en RIR y el RM, tomando el punto medio del rango de porcentaje."""
-    if rir not in RIR_TO_PERCENT or rm_value <= 0:
-        return 0, 0
-        
-    min_perc, max_perc = RIR_TO_PERCENT[rir]
-    mid_perc = (min_perc + max_perc) / 2
-    
-    peso = rm_value * (mid_perc / 100)
-    return round(peso * 2) / 2, mid_perc
-
-def descomponer_placas(peso_total, peso_barra):
-    """Calcula las placas necesarias por lado para un peso total dado."""
-    if peso_total <= peso_barra or peso_barra < 0:
-        return "Barra Sola o Peso Inválido", {}
-
-    peso_a_cargar = (peso_total - peso_barra) / 2
-    placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5] 
-    placas_por_lado = {}
-
-    peso_restante = peso_a_cargar
-    
-    for placa in placas_disponibles:
-        if peso_restante >= (placa - 0.01):
-            cantidad = int(peso_restante // placa)
-            if cantidad > 0:
-                placas_por_lado[placa] = cantidad
-                peso_restante -= (cantidad * placa)
-            
-            if peso_restante < 0.1: 
-                peso_restante = 0
-                break
-    
-    peso_cargado_total = peso_barra + (sum(p * c for p, c in placas_por_lado.items()) * 2)
-
-    return peso_cargado_total, placas_por_lado
+# --- 4. FUNCIONES AUXILIARES DE GUARDADO (A SHEETS) ---
 
 def save_main_data(df_edited):
-    """Guarda el DataFrame editado de atletas en el archivo XLSX, forzando Última_Fecha al final."""
+    """Guarda el DataFrame editado de atletas SOBRE GOOGLE SHEETS."""
+    conn = get_gsheets_connection()
+    if not conn:
+        st.error("No se pudo establecer la conexión segura para guardar.")
+        return False
+        
     try:
-        # 1. Limpieza y preparación
         df_edited.columns = df_edited.columns.str.strip()
         df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
-        # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
         if 'Última_Fecha' in df_edited.columns:
             df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
         
-        # 2. Reordenamiento CLAVE de columnas para dejar 'Última_Fecha' al final
         cols = df_edited.columns.tolist()
         if 'Última_Fecha' in cols:
             cols.remove('Última_Fecha')
             cols.append('Última_Fecha')
         
-        # Guardar solo las columnas que tienen datos
         valid_cols = [col for col in cols if not pd.isna(df_edited[col]).all()]
         df_to_save = df_edited[valid_cols].copy()
         
-        # 3. Sobrescribir el archivo Excel
-        df_to_save.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
+        # 1. Borrar todos los datos existentes en la hoja
+        conn.clear(spreadsheet=GS_ATLETAS_URL)
         
-        # 4. Limpiar la caché de los datos principales
+        # 2. Escribir el nuevo DataFrame limpio a la hoja
+        conn.write(df=df_to_save, spreadsheet=GS_ATLETAS_URL, headers=True) 
+        
         load_data.clear()
         
         return True
     except Exception as e:
-        st.error(f"Error al guardar los datos de atletas: {e}")
+        st.error(f"Error al guardar en Google Sheets: {e}")
         return False
 
 def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
-    """Añade una nueva fila al archivo readiness_data.xlsx, actualiza el archivo y el DataFrame global."""
-    
-    try:
-        current_df, _ = load_readiness_data()
-        if current_df.empty:
-             current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
-    except Exception:
-         current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
-
+    """Añade una nueva fila al archivo readiness_data.xlsx SOBRE GOOGLE SHEETS."""
+    conn = get_gsheets_connection()
+    if not conn:
+        st.error("No se pudo establecer la conexión segura para guardar.")
+        return False
+        
     new_entry = {
         'Atleta': atleta, 
         'Fecha': pd.to_datetime(fecha), 
@@ -438,108 +274,78 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     
     new_df = pd.DataFrame([new_entry])
     
-    df_updated = pd.concat([current_df, new_df], ignore_index=True)
-    
     try:
-        df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
+        # Usa append para añadir una nueva fila sin sobrescribir el resto
+        conn.insert(df=new_df, spreadsheet=GS_READINESS_URL, headers=False) 
         load_readiness_data.clear() 
         return load_readiness_data()[0], True
         
     except Exception as e:
-        st.error(f"Error al guardar los datos de bienestar: {e}")
-        return current_df, False
+        st.error(f"Error al guardar el registro de bienestar en Sheets: {e}")
+        return load_readiness_data()[0], False # Retorna el DF actual para evitar que la app se rompa
     
 def save_tests_data(df_edited):
-    """Guarda el DataFrame editado de pruebas activas en el archivo XLSX."""
-    # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
-    df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
-    
-    # Aseguramos que solo se guarden las columnas requeridas
-    df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
-    
+    """Guarda el DataFrame editado de pruebas activas SOBRE GOOGLE SHEETS."""
+    conn = get_gsheets_connection()
+    if not conn:
+        st.error("No se pudo establecer la conexión segura para guardar.")
+        return False
+        
     try:
-        # 2. Sobrescribir el archivo Excel
-        df_to_save.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
+        df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
+        df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
         
-        # 3. Limpiar la caché de las pruebas para que la calculadora se actualice
+        # Sobrescribir el archivo completo
+        conn.clear(spreadsheet=GS_TESTS_URL) # Asumiendo que esta URL se definió en las constantes
+        conn.write(df=df_to_save, spreadsheet=GS_TESTS_URL, headers=True)
+        
         load_tests_data.clear()
-        
         return True
     except Exception as e:
-        st.error(f"Error al guardar las pruebas: {e}")
+        st.error(f"Error al guardar las pruebas en Sheets: {e}")
         return False
 
 def save_calendar_data(df_edited):
-    """Guarda el DataFrame editado de calendario en el archivo XLSX."""
-    # 1. Aseguramos que la columna 'Habilitado' tenga 'Sí' o 'No' al guardar en Excel
-    df_edited['Habilitado'] = df_edited['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
-    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') # Limpiar filas sin datos esenciales
-    
-    # 2. Aseguramos que solo se guardan las columnas requeridas
-    df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
-    
+    """Guarda el DataFrame editado de calendario SOBRE GOOGLE SHEETS."""
+    conn = get_gsheets_connection()
+    if not conn:
+        st.error("No se pudo establecer la conexión segura para guardar.")
+        return False
+        
     try:
-        # 3. Sobrescribir el archivo Excel
-        df_to_save.to_excel(CALENDAR_FILE, index=False, engine='openpyxl')
+        df_edited['Habilitado'] = df_edited['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
+        df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') 
+        df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
         
-        # 4. Limpiar la caché del calendario para que se actualice
+        conn.clear(spreadsheet=GS_CALENDAR_URL)
+        conn.write(df=df_to_save, spreadsheet=GS_CALENDAR_URL, headers=True)
+        
         load_calendar_data.clear()
-        
         return True
     except Exception as e:
-        st.error(f"Error al guardar el calendario: {e}")
+        st.error(f"Error al guardar el calendario en Sheets: {e}")
         return False
 
 def save_ranking_data(df_edited):
     """Guarda el DataFrame editado del ranking, recalculando y ordenando primero."""
-    
-    # 1. Limpiar filas vacías
-    df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
-    
-    # 2. Calcular puntos y ordenar (la lógica clave)
-    df_sorted = calculate_and_sort_ranking(df_cleaned)
+    conn = get_gsheets_connection()
+    if not conn:
+        st.error("No se pudo establecer la conexión segura para guardar.")
+        return False
 
-    # 3. Guardar solo las columnas requeridas
-    df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS]
-    
     try:
-        df_to_save.to_excel(RANKING_FILE, index=False, engine='openpyxl')
+        df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
+        df_sorted = calculate_and_sort_ranking(df_cleaned)
+        df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS] # Guarda solo las columnas requeridas
+        
+        conn.clear(spreadsheet=GS_RANKING_URL)
+        conn.write(df=df_to_save, spreadsheet=GS_RANKING_URL, headers=True)
+        
         load_ranking_data.clear() 
         return True
     except Exception as e:
-        st.error(f"Error al guardar el ranking: {e}")
+        st.error(f"Error al guardar el ranking en Sheets: {e}")
         return False
-
-# --- NUEVAS FUNCIONES PARA EL RESALTADO ---
-
-def get_days_until(date_obj):
-    """Calcula los días restantes hasta una fecha, o un gran número si ya pasó."""
-    today = datetime.now().date()
-    if isinstance(date_obj, datetime):
-        date_obj = date_obj.date()
-        
-    if pd.isna(date_obj) or date_obj is None:
-        return 999
-        
-    delta = date_obj - today
-    return delta.days
-
-def highlight_imminent_events(df):
-    """Aplica estilo de fondo a filas con eventos a menos de 5 días."""
-    
-    if 'Days_Until' not in df.columns:
-        return pd.DataFrame('', index=df.index, columns=df.columns)
-        
-    mask = (df['Days_Until'] >= 0) & (df['Days_Until'] <= 5)
-    
-    styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    
-    # Aplicar estilo: fondo verde claro de 'success'
-    styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;' 
-    
-    return styles
-
-# -------------------------------------------
 
 
 # --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
@@ -1086,7 +892,7 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader("Clasificación Actual")
 
-    # Muestra el ranking ordenado final (sin la columna Puntos para el atleta)
+    # Muestra el ranking ordenado (usa df_ranking global, que ya está ordenado)
     st.dataframe(
         df_ranking.drop(columns=['Puntos'], errors='ignore'), 
         use_container_width=True,
@@ -1106,7 +912,6 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader(f"Tu Posición Actual: {atleta_actual}")
         
-        # Eliminamos la métrica de Puntos Totales
         col_rank, col_medals = st.columns(2)
         
         col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
