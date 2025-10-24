@@ -5,9 +5,6 @@ import os
 import io
 from PIL import Image
 from datetime import datetime, timedelta
-# Importamos la librería necesaria para la conexión segura
-# from streamlit_gsheets import GSheetsConnection  <-- LÍNEA ELIMINADA/COMENTADA
-import json # Para manejar el JSON de las credenciales
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -37,39 +34,36 @@ READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposi
 LOGO_PATH = 'logo.png' 
 
 
-# --- CONFIGURACIÓN DE GOOGLE SHEETS (CRÍTICO: TUS URLs PEGADAS) ---
+# --- CONFIGURACIÓN DE GOOGLE SHEETS (TUS URLs) ---
 GS_ATLETAS_URL = "https://docs.google.com/spreadsheets/d/1FB7RRgikMQIsTKmaSDU6yXDjkKp7tx4R/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
 GS_PERFILES_URL = "https://docs.google.com/spreadsheets/d/17PNuhgOP3QeE9ramQ06FfYdfTCFNdZks/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
 GS_RANKING_URL = "https://docs.google.com/spreadsheets/d/1K_ajXoEZv7d_ZbxUrabDpuktGfa_c817/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
 GS_READINESS_URL = "https://docs.google.com/spreadsheets/d/1R8Uaix9fMWzAScLdSyNbs_-mecvDYPMx/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
 GS_CALENDAR_URL = "https://docs.google.com/spreadsheets/d/1MLQER-HCr7V7549OD5b3zKdeEPSCm_mY/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true" 
 GS_TESTS_URL = "https://docs.google.com/spreadsheets/d/134DrZ0XPs0uPHKUpDQZC6Xbn9bZ8S25-/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
-# ------------------------------------------------
 
+
+# --- 2. FUNCIONES DE CARGA DE DATOS (CONEXIÓN SEGURA A SHEETS) ---
 
 # --- FUNCIÓN DE CONEXIÓN A GOOGLE SHEETS (CACHEADA) ---
 @st.cache_resource(ttl=3600)
 def get_gsheets_connection():
     """Establece y cachea la conexión segura a Google Sheets."""
     try:
-        # Usa el secreto 'gservice_account' y el tipo de conexión gsheets
+        # SOLUCIÓN CLAVE: Usamos el nombre completo de la clase para la conexión
         conn = st.connection("gsheets", type="streamlit_gsheets.GSheetsConnection") 
         return conn
     except Exception as e:
         st.error(f"Error crítico de conexión a Google Sheets. Revisa la configuración de Secrets: {e}")
         return None
 
-
-# --- 2. FUNCIONES DE CARGA DE DATOS (MIGRADO A SHEETS) ---
-
-@st.cache_data(ttl=300) # Carga más frecuente para datos principales
+@st.cache_data(ttl=300) 
 def load_data():
     """Carga los datos de los atletas desde Google Sheets."""
     conn = get_gsheets_connection()
     status_message = None
     
-    if not conn:
-        return pd.DataFrame(), "Error: No se pudo establecer la conexión con Google Sheets."
+    if not conn: return pd.DataFrame(), "Error: No se pudo establecer la conexión con Google Sheets."
 
     try:
         df = conn.read(spreadsheet=GS_ATLETAS_URL, ttl=300)
@@ -97,6 +91,10 @@ def load_calendar_data():
         calendar_df = conn.read(spreadsheet=GS_CALENDAR_URL, ttl=300)
         calendar_df.columns = calendar_df.columns.str.strip() 
         
+        # --- CORRECCIÓN DEL KEYERROR EN EL FILTRO DE HABILITADO ---
+        if 'Habilitado' not in calendar_df.columns:
+             calendar_df['Habilitado'] = 'No' # Añade la columna por defecto si no existe
+
         if 'Fecha' in calendar_df.columns:
             calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
 
@@ -147,10 +145,8 @@ def calculate_and_sort_ranking(df):
     for col in ['Oros', 'Platas', 'Bronces']:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
-    # Calcular los puntos (Oro=10, Plata=3, Bronce=1)
     df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
     
-    # Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro) > Puntos (Desempate)
     df_sorted = df.sort_values(
         by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
         ascending=[False, False, False, False]
@@ -159,7 +155,6 @@ def calculate_and_sort_ranking(df):
     df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
     
     return df_sorted
-# -----------------------------------------------------
 
 @st.cache_data(ttl=3600)
 def load_ranking_data():
@@ -216,7 +211,7 @@ df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
 
 
-# --- 4. FUNCIONES AUXILIARES DE GUARDADO (A SHEETS) ---
+# --- 4. FUNCIONES AUXILIARES ---
 
 def check_login(username, password):
     """Verifica el usuario y contraseña contra el DataFrame."""
@@ -321,17 +316,13 @@ def save_main_data(df_edited):
         
         cols = df_edited.columns.tolist()
         
-        # Asegurarse que las columnas requeridas esten
         for col in REQUIRED_COLUMNS:
             if col not in cols:
                 df_edited[col] = np.nan
         
         df_to_save = df_edited[cols].copy()
         
-        # 1. Borrar todos los datos existentes en la hoja
         conn.clear(spreadsheet=GS_ATLETAS_URL)
-        
-        # 2. Escribir el nuevo DataFrame limpio a la hoja
         conn.write(df=df_to_save, spreadsheet=GS_ATLETAS_URL, headers=True) 
         
         load_data.clear()
