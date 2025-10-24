@@ -576,7 +576,7 @@ if not st.session_state['logged_in']:
 # --- CONTENIDO DE LA APLICACIÓN (POST-LOGIN) ---
 # ----------------------------------------------------------------------
 
-st.title("💪 RM & Rendimiento Manager")
+st.title("💪Rendimiento Manager - Hapkido deportivo")
 logout() 
 
 if st.session_state['logged_in']:
@@ -873,7 +873,7 @@ with calc_tab:
 # ----------------------------------------------------------------------------------
 with CALENDAR_TAB:
     st.header("📅 Calendario de Pruebas y Actividades")
-    st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
+    st.caption(f"Archivo de origen: keansports derechos reservados")
     
     if rol_actual == 'Entrenador':
         st.subheader("Gestión de Cronograma (Vista Entrenador)")
@@ -935,7 +935,7 @@ with CALENDAR_TAB:
 # ----------------------------------------------------------------------------------
 with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
+    st.caption(f"Archivo de origen: keansports derechos reservados")
 
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
 
