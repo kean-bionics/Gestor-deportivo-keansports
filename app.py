@@ -24,7 +24,6 @@ PERFILES_FILE = 'perfiles.xlsx'
 
 # Archivo 5: Ranking
 RANKING_FILE = 'ranking.xlsx'
-# --- CAMBIO CLAVE: Eliminación de 'Puntos' de la estructura requerida ---
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
 # Archivo 6: Readiness
@@ -97,16 +96,13 @@ def load_calendar_data():
             calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
             calendar_df.columns = calendar_df.columns.str.strip() 
             
-            # --- SOLUCIÓN CLAVE: Convertir la columna Fecha a datetime.date ---
             if 'Fecha' in calendar_df.columns:
                 calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
-            # -----------------------------------------------------------------
 
         except:
              excel_exists = False
 
     if not excel_exists or calendar_df.empty:
-        # Crea un DataFrame de ejemplo si no existe o hubo error
         data = {
             'Evento': ['Prueba de RM (Sentadilla/PB)', 'Evaluación de Resistencia', 'Reunión de Equipo'],
             'Fecha': [datetime.now().date() + timedelta(days=30), datetime.now().date() + timedelta(days=60), datetime.now().date() + timedelta(days=10)],
@@ -114,10 +110,9 @@ def load_calendar_data():
             'Habilitado': ['Sí', 'Sí', 'No']
         }
         calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
-        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date # Se añade conversión al crear
+        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
         calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
 
-    # Convertir a booleano antes de retornar
     if 'Habilitado' in calendar_df.columns:
         calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
 
@@ -125,10 +120,7 @@ def load_calendar_data():
 
 @st.cache_data(ttl=3600)
 def load_tests_data():
-    """
-    Carga la lista de pruebas activas.
-    Retorna el DataFrame COMPLETO para edición y el mensaje de estado.
-    """
+    """Carga la lista de pruebas activas."""
     status_message = None
     
     if not os.path.exists(PRUEBAS_FILE):
@@ -150,12 +142,11 @@ def load_tests_data():
 
     df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     
-    # Retorna el DF completo (con la columna Visible booleana)
     return df_tests, status_message 
 
 @st.cache_data(ttl=3600)
 def load_perfil_data():
-    """Carga los datos de perfil de los atletas desde el archivo Excel. Si no existe, lo crea."""
+    """Carga los datos de perfil de los atletas desde el archivo Excel."""
     df_perfil = pd.DataFrame()
     excel_exists = os.path.exists(PERFILES_FILE)
     status_message = None
@@ -190,25 +181,19 @@ def load_perfil_data():
 def calculate_and_sort_ranking(df):
     """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
     
-    # 1. Asegurar que las columnas son numéricas (los nuevos ingresos pueden ser strings)
     for col in ['Oros', 'Platas', 'Bronces']:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         
-    # 2. Calcular los puntos (Oro=10, Plata=3, Bronce=1)
     df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
     
-    # 3. Ordenación jerárquica: Oros (1ro) > Platas (2do) > Bronces (3ro)
-    # NOTA: Los 'Puntos' quedan como desempate final, pero la clasificación se basa en la jerarquía de medallas.
     df_sorted = df.sort_values(
         by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
-        ascending=[False, False, False, False] # Mayor a menor para todos
+        ascending=[False, False, False, False]
     ).copy()
     
-    # 4. Re-asignar la posición
     df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
     
     return df_sorted
-# -----------------------------------------------------
 
 @st.cache_data(ttl=3600)
 def load_ranking_data():
@@ -222,11 +207,9 @@ def load_ranking_data():
             df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
             df_ranking.columns = df_ranking.columns.str.strip() 
             
-            # Ajustamos la verificación de columnas requeridas para el nuevo set
             missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
             if missing_cols:
                  status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
-                 # Creamos un DF vacío con todas las columnas, incluyendo Puntos, para evitar fallos.
                  full_ranking_cols = RANKING_REQUIRED_COLUMNS + ['Puntos'] 
                  df_ranking = pd.DataFrame(columns=full_ranking_cols) 
             
@@ -242,14 +225,11 @@ def load_ranking_data():
             'Platas': [2, 3, 0, 1],
             'Bronces': [1, 0, 1, 2],
         }
-        # Creamos un DF de ejemplo solo con las columnas base
         df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
         df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
         status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
 
-    # --- LÓGICA CLAVE: CALCULAR Y ORDENAR AL CARGAR ---
     if not df_ranking.empty:
-        # Aseguramos que la columna 'Puntos' exista antes de ordenar (la crea si no existe)
         df_ranking = calculate_and_sort_ranking(df_ranking)
         
     return df_ranking, status_message
@@ -294,7 +274,8 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data()
+# df_readiness ya no se usa globalmente para evitar que se reinicie
+df_readiness_placeholder, readiness_status = load_readiness_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -607,14 +588,14 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas
+# Definición de pestañas (Quitamos BIENESTAR_TAB para simplificar)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, BIENESTAR_TAB, RANKING_TAB = st.tabs([
-        "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🧘 Bienestar", "🏆 Ranking"
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs([
+        "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"
     ])
 else:
-    tab2, CALENDAR_TAB, PERFIL_TAB, BIENESTAR_TAB, RANKING_TAB = st.tabs([
-        "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🧘 Bienestar", "🏆 Ranking"
+    tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs([
+        "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"
     ])
 
 # ----------------------------------------------------------------------------------
@@ -646,14 +627,13 @@ if rol_actual == 'Entrenador':
         # Botones de recarga
         col_recarga_atletas, col_recarga_pruebas = st.columns(2)
         with col_recarga_atletas:
-            if st.button("Recargar Datos Atletas/Perfiles/Ranking/Bienestar", help="Recarga todos los archivos de datos dinámicos."):
+            if st.button("Recargar Datos Atletas/Perfiles/Ranking", help="Recarga todos los archivos de datos dinámicos."):
                 load_data.clear()
                 load_perfil_data.clear()
                 load_ranking_data.clear()
-                load_readiness_data.clear()
                 st.rerun() 
         with col_recarga_pruebas:
-            if st.button("Recargar Calendario", help="Recarga 'calendario_data.xlsx'."):
+            if st.button("Recargar Calendario/Pruebas", help="Recarga 'calendario_data.xlsx' y 'pruebas_activas.xlsx'."):
                 load_calendar_data.clear()
                 load_tests_data.clear()
                 st.rerun()
@@ -709,8 +689,8 @@ if rol_actual == 'Entrenador':
         
         # 1. Widget de edición
         df_edited = st.data_editor(
-            df_pruebas_full, # Usamos el DF COMPLETO
-            num_rows="dynamic", # Permite añadir y eliminar filas
+            df_pruebas_full,
+            num_rows="dynamic",
             column_config={
                 "Visible": st.column_config.CheckboxColumn(
                     "Visible",
@@ -742,7 +722,6 @@ calc_tab = tab2
 with calc_tab:
     st.header("🧮 Calculadora de Carga")
     
-    # Manejo de error si el atleta no está en el DF después de la edición
     if atleta_actual not in df_atletas['Atleta'].values:
         st.error(f"El atleta '{atleta_actual}' no se encuentra en la base de datos. Por favor, contacta al entrenador o cierra sesión.")
         st.stop()
@@ -755,7 +734,6 @@ with calc_tab:
     col_ejercicio, col_barra = st.columns([2, 1])
 
     with col_ejercicio:
-        # Usamos el DF FILTRADO (df_pruebas)
         ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
@@ -774,7 +752,6 @@ with calc_tab:
             if not columna_rm_series.empty:
                 columna_rm = columna_rm_series.iloc[0]
             
-            # Buscar el valor de RM en el DataFrame de Atletas, incluso si es una columna nueva
             if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
                 rm_inicial = float(datos_usuario[columna_rm]) 
             
@@ -842,7 +819,6 @@ with calc_tab:
     st.markdown("---")
     st.subheader("Conversión de Placas")
     
-    # Usar el peso del estimador RIR para la conversión, ya que es el cálculo más específico
     peso_conversion = peso_calculado_rir if peso_calculado_rir > 0 else peso_calculado_perc
 
     col_conversion, col_placas = st.columns([1, 1])
@@ -944,7 +920,7 @@ with CALENDAR_TAB:
         st.subheader(f"Próximos Eventos Habilitados para {atleta_actual}")
         eventos_mostrar = df_calendario.copy()
     
-    # --- LÓGICA DE RESALTADO (Fuera de la función de estilo) ---
+    # --- LÓGICA DE RESALTADO ---
     if not eventos_mostrar.empty:
         eventos_mostrar['Days_Until'] = eventos_mostrar['Fecha'].apply(get_days_until)
         
@@ -961,7 +937,6 @@ with CALENDAR_TAB:
 # ----------------------------------------------------------------------------------
 with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
 
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
 
@@ -982,7 +957,7 @@ with PERFIL_TAB:
                 st.metric(label=key.replace('_', ' ').title(), value=value_display)
 
     else:
-        st.warning(f"No se encontró información de perfil para **{atleta_actual}** en el archivo {PERFILES_FILE}. Por favor, verifique el Excel.")
+        st.warning(f"No se encontró información de perfil para **{atleta_actual}** en la base de datos.")
 
     if rol_actual == 'Entrenador':
         st.markdown("---")
@@ -992,62 +967,7 @@ with PERFIL_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: BIENESTAR (NUEVA PESTAÑA)
-# ----------------------------------------------------------------------------------
-with BIENESTAR_TAB:
-    st.header("🧘 Seguimiento de Bienestar y Disposición")
-    st.caption("Registra tu estado subjetivo diario para optimizar tu entrenamiento.")
-
-    st.subheader("Registro Diario")
-    
-    if 'df_readiness_display' not in st.session_state:
-        st.session_state['df_readiness_display'] = df_readiness.copy()
-
-    with st.form("readiness_form", clear_on_submit=True):
-        fecha_registro = st.date_input("Fecha de Registro:", datetime.now().date())
-        
-        col_sleep, col_pain, col_ready = st.columns(3)
-        
-        with col_sleep:
-            sueno = st.slider("1. Calidad del Sueño:", min_value=1, max_value=5, value=3, help="1=Pésimo, 5=Excelente")
-        
-        with col_pain:
-            molestias = st.slider("2. Nivel de Molestias/Dolor:", min_value=1, max_value=5, value=1, help="1=Ninguna, 5=Severa")
-            
-        with col_ready:
-            disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=3, help="1=Baja, 5=Alta")
-            
-        submitted = st.form_submit_button("Guardar Registro Diario")
-        
-        if submitted:
-            updated_df, success = save_readiness_data(atleta_actual, fecha_registro, sueno, molestias, disposicion)
-            
-            if success:
-                st.success("¡Registro de bienestar guardado exitosamente! Actualizando historial...")
-                st.session_state['df_readiness_display'] = updated_df
-            
-
-    st.markdown("---")
-    st.subheader("Historial de Bienestar")
-
-    df_atleta_readiness = st.session_state['df_readiness_display'][st.session_state['df_readiness_display']['Atleta'] == atleta_actual].sort_values(by='Fecha', ascending=False)
-    
-    if df_atleta_readiness.empty:
-        st.info("No tienes registros de bienestar aún.")
-    else:
-        st.dataframe(
-            df_atleta_readiness[['Fecha', 'Sueño', 'Molestias', 'Disposicion']].head(10), 
-            use_container_width=True
-        )
-        
-        if rol_actual == 'Entrenador':
-            st.markdown("---")
-            st.subheader("Datos Crudos (Vista Entrenador)")
-            st.dataframe(st.session_state['df_readiness_display'], use_container_width=True)
-
-
-# ----------------------------------------------------------------------------------
-## PESTAÑA 6: RANKING (Visible para todos)
+## PESTAÑA 5: RANKING (Visible para todos)
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
@@ -1058,12 +978,10 @@ with RANKING_TAB:
         st.subheader("Gestión de Ranking (Edición Directa)")
         st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición se recalculará automáticamente al guardar.**")
         
-        # 1. Widget de edición (usando el DF ordenado actual)
         df_edited_ranking = st.data_editor(
-            df_ranking.drop(columns=['Puntos'], errors='ignore'), # Ocultamos Puntos del editor
+            df_ranking.drop(columns=['Puntos'], errors='ignore'),
             num_rows="dynamic",
             column_config={
-                # Deshabilitar Posicion y Puntos porque se calculan automáticamente
                 "Posicion": st.column_config.NumberColumn("Posición", disabled=True),
                 "Atleta": st.column_config.TextColumn("Atleta", required=True),
                 "Categoria": st.column_config.TextColumn("Categoría"),
@@ -1075,7 +993,6 @@ with RANKING_TAB:
             key="ranking_data_editor"
         )
         
-        # 2. Botón de guardado
         if st.button("💾 Guardar y Recalcular Ranking", type="primary", key="save_ranking_data_btn"):
             if save_ranking_data(df_edited_ranking):
                 st.success("✅ Ranking recalculado, ordenado y guardado con éxito. Recargando aplicación...")
@@ -1086,7 +1003,6 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader("Clasificación Actual")
 
-    # Muestra el ranking ordenado final (sin la columna Puntos para el atleta)
     st.dataframe(
         df_ranking.drop(columns=['Puntos'], errors='ignore'), 
         use_container_width=True,
@@ -1099,14 +1015,12 @@ with RANKING_TAB:
         height=35 * (len(df_ranking) + 1)
     )
 
-    # Mostrar la posición del atleta actual de forma destacada
     current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
     if not current_athlete_rank.empty:
         rank_data = current_athlete_rank.iloc[0]
         st.markdown("---")
         st.subheader(f"Tu Posición Actual: {atleta_actual}")
         
-        # Eliminamos la métrica de Puntos Totales
         col_rank, col_medals = st.columns(2)
         
         col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
