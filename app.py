@@ -6,7 +6,7 @@ import io
 from PIL import Image
 from datetime import datetime, timedelta
 # Importamos la librería necesaria para la conexión segura
-from streamlit_gsheets import GSheetsConnection 
+# from streamlit_gsheets import GSheetsConnection  <-- LÍNEA ELIMINADA/COMENTADA
 import json # Para manejar el JSON de las credenciales
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
@@ -47,171 +47,13 @@ GS_TESTS_URL = "https://docs.google.com/spreadsheets/d/134DrZ0XPs0uPHKUpDQZC6Xbn
 # ------------------------------------------------
 
 
-# --- FUNCIONES DE CÁLCULO (DEBES TENERLAS EN TU CÓDIGO) ---
-# Si no tenías estas funciones, debes añadirlas a tu app.py o la calculadora fallará.
-# Estas funciones son esenciales para la lógica de la Pestaña 2.
-
-def calcular_porcentaje_rm(rm_value, porcentaje):
-    """Calcula la carga al porcentaje dado del RM."""
-    if rm_value <= 0: return 0.0
-    return round(rm_value * (porcentaje / 100), 1)
-
-def calcular_carga_por_rir(rm_value, rir_target):
-    """Estima la carga basada en el RM y el RIR objetivo (basado en el RPE/RIR)."""
-    if rm_value <= 0: return 0.0, 0.0
-    
-    # Tabla de pérdida de porcentaje típica por RIR (Ajustable)
-    # RIR 4 (RPE 6) -> 70%
-    # RIR 3 (RPE 7) -> 75%
-    # RIR 2 (RPE 8) -> 80%
-    # RIR 1 (RPE 9) -> 90%
-    # RIR 0 (RPE 10) -> 100%
-    
-    perc_map = {
-        4: 0.70,
-        3: 0.75,
-        2: 0.80,
-        1: 0.90,
-        0: 1.00
-    }
-    
-    perc_sugerido = perc_map.get(rir_target, 0.75) # Default al 75% si no encuentra
-    
-    # Un RIR de 2-3 repeticiones se asocia típicamente con un 80-85% del 1RM
-    # Ajustamos el porcentaje para el cálculo, buscando el peso que te permite hacer 'X' reps
-    
-    # Esta es una simplificación de la tabla de Epley/Brzycki:
-    # Asumimos que quieres hacer N reps con ese RIR
-    
-    # El porcentaje de 1RM que se levanta en RIR 0 (fallo) es el 1RM.
-    # El porcentaje de 1RM levantado al FALLO (RIR 0) con 5 repeticiones es típicamente ~85%
-    
-    # Si el atleta quiere 5 reps (target_reps=5) con RIR=2, eso es 7 reps en total antes del fallo.
-    # Factor de porcentaje de 1RM (basado en el número total de repeticiones antes del fallo):
-    # Total Reps = Reps Objetivo + RIR
-    # Si Total Reps = 5 (RIR 0) -> 85%
-    # Si Total Reps = 7 (RIR 2) -> 77.5%
-    
-    # Usaremos una aproximación simple basada en la pérdida de 2.5% por rep adicional
-    reps_extra = 5 # Asumimos 5 repeticiones objetivo para el cálculo
-    
-    total_reps_antes_fallo = reps_extra + rir_target
-    
-    # Basado en la fórmula del RIR (ajustada para el factor 0.025/rep)
-    if total_reps_antes_fallo >= 10:
-        perc = 0.65
-    elif total_reps_antes_fallo >= 8:
-        perc = 0.725
-    elif total_reps_antes_fallo >= 6:
-        perc = 0.80
-    elif total_reps_antes_fallo >= 4:
-        perc = 0.875
-    else: # Total Reps = 1
-        perc = 0.95
-        
-    peso_calculado = rm_value * perc
-    
-    # Retornar el peso calculado y el porcentaje para fines informativos
-    return round(peso_calculado, 1), round(perc * 100, 1)
-
-def descomponer_placas(peso_requerido, peso_barra):
-    """Descompone el peso requerido en placas por lado, asumiendo una barra fija."""
-    if peso_requerido <= peso_barra:
-        return "Peso < Barra", {}
-    
-    peso_neto = peso_requerido - peso_barra
-    peso_por_lado = peso_neto / 2
-    
-    # Placas disponibles (de mayor a menor)
-    placas_disp = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5, 0.25]
-    placas_por_lado = {}
-    
-    peso_restante = peso_por_lado
-    
-    for placa in placas_disp:
-        if peso_restante >= placa:
-            cantidad = int(peso_restante // placa)
-            placas_por_lado[placa] = cantidad
-            peso_restante -= cantidad * placa
-            
-    # Redondear el peso restante para evitar errores de coma flotante
-    if round(peso_restante, 2) > 0.01:
-        # Si aún queda peso por poner, puede ser un error en el cálculo o una placa pequeña no listada.
-        pass
-        
-    return peso_requerido, placas_por_lado
-
-def get_days_until(date_obj):
-    """Calcula los días restantes hasta la fecha dada."""
-    if pd.isna(date_obj):
-        return 999 
-    try:
-        if isinstance(date_obj, str):
-             date_obj = datetime.strptime(date_obj, '%Y-%m-%d').date()
-        elif isinstance(date_obj, datetime):
-            date_obj = date_obj.date()
-        
-        today = datetime.now().date()
-        delta = (date_obj - today).days
-        return delta
-    except Exception:
-        return 999
-
-def highlight_imminent_events(df):
-    """Aplica formato condicional a los eventos inminentes (0 a 5 días)."""
-    days = df['Days_Until']
-    is_imminent = (days >= 0) & (days <= 5)
-    
-    styles = pd.DataFrame('', index=df.index, columns=df.columns)
-    
-    styles.loc[is_imminent, :] = 'background-color: #f7a072; color: black;' # Naranja suave
-    
-    return styles
-
-# --- FUNCIONES DE LOGIN (Deben estar en tu código) ---
-
-def login_form():
-    """Muestra el formulario de inicio de sesión."""
-    with st.form("login_form"):
-        st.subheader("Acceso")
-        user = st.text_input("Usuario (Atleta o Entrenador):", key='login_user')
-        password = st.text_input("Contraseña:", type='password', key='login_password')
-        
-        submitted = st.form_submit_button("Iniciar Sesión")
-        
-        if submitted:
-            df = load_data()[0]
-            if df.empty:
-                st.error("No se pudo cargar la base de datos de atletas. Contacta al soporte.")
-                return
-            
-            user_row = df[(df['Atleta'] == user) & (df['Contraseña'] == password)]
-            
-            if not user_row.empty:
-                st.session_state['logged_in'] = True
-                st.session_state['atleta_nombre'] = user_row['Atleta'].iloc[0]
-                st.session_state['rol'] = user_row['Rol'].iloc[0]
-                st.rerun()
-            else:
-                st.error("Usuario o Contraseña incorrectos.")
-
-def logout():
-    """Botón de cerrar sesión."""
-    if st.session_state['logged_in']:
-        if st.sidebar.button("Cerrar Sesión", type="secondary"):
-            st.session_state['logged_in'] = False
-            del st.session_state['atleta_nombre']
-            del st.session_state['rol']
-            st.rerun()
-
-
 # --- FUNCIÓN DE CONEXIÓN A GOOGLE SHEETS (CACHEADA) ---
 @st.cache_resource(ttl=3600)
 def get_gsheets_connection():
     """Establece y cachea la conexión segura a Google Sheets."""
     try:
-        # Aquí Streamlit usa las credenciales del secreto 'gservice_account'
-        conn = st.connection("gsheets", type=GSheetsConnection) 
+        # Usa el secreto 'gservice_account' y el tipo de conexión gsheets
+        conn = st.connection("gsheets", type="streamlit_gsheets.GSheetsConnection") 
         return conn
     except Exception as e:
         st.error(f"Error crítico de conexión a Google Sheets. Revisa la configuración de Secrets: {e}")
@@ -376,6 +218,93 @@ df_readiness, readiness_status = load_readiness_data()
 
 # --- 4. FUNCIONES AUXILIARES DE GUARDADO (A SHEETS) ---
 
+def check_login(username, password):
+    """Verifica el usuario y contraseña contra el DataFrame."""
+    user_row = df_atletas[df_atletas['Atleta'].str.lower() == username.lower()]
+    
+    if not user_row.empty:
+        if user_row['Contraseña'].iloc[0] == password:
+            return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
+    return False, None, None
+
+def login_form():
+    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
+    with st.form("login_form"):
+        username = st.text_input("Usuario (Nombre del Atleta)")
+        password = st.text_input("Contraseña", type="password")
+        submitted = st.form_submit_button("Entrar")
+
+        if submitted:
+            success, rol, atleta_nombre = check_login(username, password)
+            if success:
+                st.session_state['logged_in'] = True
+                st.session_state['rol'] = rol
+                st.session_state['atleta_nombre'] = atleta_nombre
+                st.success(f"Bienvenido, {atleta_nombre} ({rol})!")
+                st.rerun() 
+            else:
+                st.error("Usuario o Contraseña incorrectos.")
+
+def logout():
+    """Cierra la sesión del usuario."""
+    if 'logged_in' in st.session_state and st.session_state['logged_in']:
+        st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.clear())
+        st.sidebar.markdown(f"**Conectado como:** {st.session_state['atleta_nombre']}")
+        st.sidebar.markdown(f"**Rol:** {st.session_state['rol']}")
+
+def calcular_porcentaje_rm(rm_value, porcentaje):
+    """Calcula el peso basado en un porcentaje del RM, redondeando a 0.5 kg."""
+    if rm_value > 0 and 0 <= porcentaje <= 100:
+        peso = rm_value * (porcentaje / 100)
+        return round(peso * 2) / 2
+    return 0
+
+# Relación inversa RIR a Porcentaje de 1RM
+RIR_TO_PERCENT = {
+    0: (90, 100), 
+    1: (87, 95),  
+    2: (80, 87),  
+    3: (70, 80),  
+    4: (65, 75),  
+}
+
+def calcular_carga_por_rir(rm_value, rir):
+    """Calcula el peso óptimo basado en RIR y el RM, tomando el punto medio del rango de porcentaje."""
+    if rir not in RIR_TO_PERCENT or rm_value <= 0:
+        return 0, 0
+        
+    min_perc, max_perc = RIR_TO_PERCENT[rir]
+    mid_perc = (min_perc + max_perc) / 2
+    
+    peso = rm_value * (mid_perc / 100)
+    return round(peso * 2) / 2, mid_perc
+
+def descomponer_placas(peso_total, peso_barra):
+    """Calcula las placas necesarias por lado para un peso total dado."""
+    if peso_total <= peso_barra or peso_barra < 0:
+        return "Barra Sola o Peso Inválido", {}
+
+    peso_a_cargar = (peso_total - peso_barra) / 2
+    placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5] 
+    placas_por_lado = {}
+
+    peso_restante = peso_a_cargar
+    
+    for placa in placas_disponibles:
+        if peso_restante >= (placa - 0.01):
+            cantidad = int(peso_restante // placa)
+            if cantidad > 0:
+                placas_por_lado[placa] = cantidad
+                peso_restante -= (cantidad * placa)
+            
+            if peso_restante < 0.1: 
+                peso_restante = 0
+                break
+    
+    peso_cargado_total = peso_barra + (sum(p * c for p, c in placas_por_lado.items()) * 2)
+
+    return peso_cargado_total, placas_por_lado
+
 def save_main_data(df_edited):
     """Guarda el DataFrame editado de atletas SOBRE GOOGLE SHEETS."""
     conn = get_gsheets_connection()
@@ -391,6 +320,7 @@ def save_main_data(df_edited):
             df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
         
         cols = df_edited.columns.tolist()
+        
         # Asegurarse que las columnas requeridas esten
         for col in REQUIRED_COLUMNS:
             if col not in cols:
@@ -429,7 +359,6 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     new_df = pd.DataFrame([new_entry])
     
     try:
-        # Usa insert para añadir una nueva fila sin sobrescribir el resto
         conn.insert(df=new_df, spreadsheet=GS_READINESS_URL, headers=False) 
         load_readiness_data.clear() 
         return load_readiness_data()[0], True
@@ -500,11 +429,42 @@ def save_ranking_data(df_edited):
         st.error(f"Error al guardar el ranking en Sheets: {e}")
         return False
 
+# --- NUEVAS FUNCIONES PARA EL RESALTADO ---
+
+def get_days_until(date_obj):
+    """Calcula los días restantes hasta una fecha, o un gran número si ya pasó."""
+    today = datetime.now().date()
+    if isinstance(date_obj, datetime):
+        date_obj = date_obj.date()
+        
+    if pd.isna(date_obj) or date_obj is None:
+        return 999
+        
+    delta = date_obj - today
+    return delta.days
+
+def highlight_imminent_events(df):
+    """Aplica estilo de fondo a filas con eventos a menos de 5 días."""
+    
+    if 'Days_Until' not in df.columns:
+        return pd.DataFrame('', index=df.index, columns=df.columns)
+        
+    mask = (df['Days_Until'] >= 0) & (df['Days_Until'] <= 5)
+    
+    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+    
+    styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;' 
+    
+    return styles
+
+# -------------------------------------------
+
 
 # --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
+# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
 if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
     st.toast(initial_status, icon="📝")
 if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
@@ -528,11 +488,7 @@ if not st.session_state['logged_in']:
     
     logo_col, spacer_col = st.columns([1, 10])
     with logo_col:
-        # Aquí se asume que 'logo.png' está en la carpeta raíz
-        if os.path.exists(LOGO_PATH):
-            st.image(LOGO_PATH, width=120) 
-        else:
-            st.warning("No se encontró el archivo logo.png")
+        st.image(LOGO_PATH, width=120) 
     
     st.markdown("---") 
 
@@ -563,9 +519,7 @@ st.title("💪 RM & Rendimiento Manager")
 logout() 
 
 if st.session_state['logged_in']:
-    # Asegúrate de que la ruta exista en Streamlit Cloud o usa un logo por defecto.
-    if os.path.exists(LOGO_PATH):
-        st.sidebar.image(LOGO_PATH, width=100)
+    st.sidebar.image(LOGO_PATH, width=100)
     st.sidebar.markdown("---")
 
 rol_actual = st.session_state['rol']
@@ -624,7 +578,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna al archivo **atletas_data** en Google Sheets manualmente para que el código la reconozca.")
+        st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna al archivo **atletas_data** en Google Sheets manualmente, subirlo a GitHub y luego hacer clic en 'Recargar Datos Atletas...'.")
 
         df_editor_main = df_atletas.copy()
         
@@ -667,7 +621,7 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("2. Gestión de Pruebas (Modularidad de la Calculadora)")
-        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito.** La columna **ColumnaRM** debe coincidir exactamente con el encabezado en la hoja de Atletas.")
+        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito. Puedes borrar filas haciendo clic en el número de fila.**")
         
         # --- TABLA EDITABLE DE PRUEBAS ---
         
@@ -681,8 +635,8 @@ if rol_actual == 'Entrenador':
                     help="Marca para mostrar la prueba en la calculadora.",
                     default=False,
                 ),
-                "ColumnaRM": st.column_config.TextColumn("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en la Hoja de Atletas (Ej: Biceps_RM)"), 
-                "NombrePrueba": st.column_config.TextColumn("NombrePrueba"),
+                "ColumnaRM": st.column_config.Column("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en Datos de Atletas (Ej: Biceps_RM)"), 
+                "NombrePrueba": st.column_config.Column("NombrePrueba"),
             },
             use_container_width=True,
             key="tests_data_editor"
@@ -721,7 +675,7 @@ with calc_tab:
         ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
-            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas'.")
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
             ejercicio_default = st.selectbox(
