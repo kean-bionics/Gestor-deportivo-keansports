@@ -4,7 +4,7 @@ import numpy as np
 import os
 import io
 from PIL import Image
-from datetime import datetime, timedelta, time # Importar time para el cálculo de VAM
+from datetime import datetime, timedelta, time
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -26,7 +26,7 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness (Mantenemos la carga por si se usa en el futuro)
+# Archivo 6: Readiness
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
@@ -46,6 +46,7 @@ def load_data():
     if excel_exists:
         try:
             df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
+            
             df.columns = df.columns.str.strip() 
             
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
@@ -272,7 +273,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data() # Se mantiene la carga por si se usa la lógica después
+df_readiness, readiness_status = load_readiness_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -585,14 +586,14 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (Quitamos BIENESTAR_TAB para simplificar)
+# Definición de pestañas (INCLUYENDO ACONDICIONAMIENTO)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs([
-        "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, RANKING_TAB = st.tabs([
+        "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🏆 Ranking"
     ])
 else:
-    tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs([
-        "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"
+    tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, RANKING_TAB = st.tabs([
+        "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🏆 Ranking"
     ])
 
 # ----------------------------------------------------------------------------------
@@ -734,7 +735,7 @@ with calc_tab:
         ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
-            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas'.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
             ejercicio_default = st.selectbox(
@@ -965,7 +966,103 @@ with PERFIL_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: RANKING (Visible para todos)
+## PESTAÑA 5: ACONDICIONAMIENTO (CONTENIDO ANTES DE RANKING)
+# ----------------------------------------------------------------------------------
+with ACOND_TAB:
+    st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
+    
+    # Obtener datos del atleta para usar la edad en el cálculo de FC Max
+    # Manejamos errores si el atleta no existe o la columna Edad no es numérica
+    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
+    
+    if not datos_perfil.empty:
+        datos_perfil = datos_perfil.iloc[0]
+        edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
+        
+        # Fórmula FC Máx: 220 - Edad (Tananka o Fox y Haskell son más precisas pero usamos la simple)
+        fc_max_estimada = 220 - edad if not pd.isna(edad) else "N/D"
+
+        st.subheader("1. Frecuencia Cardíaca Máxima (FC Máx) y Zonas")
+        
+        col_edad, col_fc = st.columns(2)
+        with col_edad:
+            st.metric("Edad Registrada (Aprox.)", f"{int(edad) if not pd.isna(edad) else 'N/D'} años")
+            
+        with col_fc:
+            st.metric("FC Máx Estimada", f"**{fc_max_estimada} ppm** (Fórmula 220 - Edad)")
+
+        if not pd.isna(fc_max_estimada) and isinstance(fc_max_estimada, int):
+            st.markdown("---")
+            st.subheader("Zonas de Entrenamiento Basadas en FC Máx")
+            
+            zonas = {
+                "Zona 1 (50%-60%)": f"{round(fc_max_estimada * 0.50)} - {round(fc_max_estimada * 0.60)} ppm",
+                "Zona 2 (60%-70%)": f"{round(fc_max_estimada * 0.60)} - {round(fc_max_estimada * 0.70)} ppm",
+                "Zona 3 (70%-80%)": f"{round(fc_max_estimada * 0.70)} - {round(fc_max_estimada * 0.80)} ppm",
+                "Zona 4 (80%-90%)": f"{round(fc_max_estimada * 0.80)} - {round(fc_max_estimada * 0.90)} ppm",
+                "Zona 5 (90%-100%)": f"{round(fc_max_estimada * 0.90)} - {fc_max_estimada} ppm"
+            }
+            
+            col_z1, col_z2, col_z3 = st.columns(3)
+            col_z1.markdown(f"**{list(zonas.keys())[0]}**:<br>{list(zonas.values())[0]}", unsafe_allow_html=True)
+            col_z1.markdown(f"**{list(zonas.keys())[1]}**:<br>{list(zonas.values())[1]}", unsafe_allow_html=True)
+            col_z2.markdown(f"**{list(zonas.keys())[2]}**:<br>{list(zonas.values())[2]}", unsafe_allow_html=True)
+            col_z2.markdown(f"**{list(zonas.keys())[3]}**:<br>{list(zonas.values())[3]}", unsafe_allow_html=True)
+            col_z3.markdown(f"**{list(zonas.keys())[4]}**:<br>{list(zonas.values())[4]}", unsafe_allow_html=True)
+
+    else:
+        st.info("No se puede calcular la FC Máx. Asegúrate de que la columna 'Edad' esté registrada en tu perfil.")
+
+    st.markdown("---")
+    
+    # --- MÓDULO 2: ESTIMACIÓN VAM Y RITMOS ---
+    st.subheader("2. Estimador de Ritmo de Carrera (VAM)")
+    
+    col_dist, col_min, col_sec = st.columns(3)
+
+    with col_dist:
+        test_dist = st.number_input("Distancia Total de la Prueba (metros):", min_value=100, value=2000, step=100)
+    
+    with col_min:
+        test_minutes = st.number_input("Tiempo de Prueba: Minutos:", min_value=0, value=7, step=1)
+        
+    with col_sec:
+        test_seconds = st.number_input("Tiempo de Prueba: Segundos:", min_value=0, max_value=59, value=30, step=5)
+
+    total_seconds = (test_minutes * 60) + test_seconds
+    
+    if total_seconds > 0 and test_dist > 0:
+        v_ms = test_dist / total_seconds
+        v_kmh = v_ms * 3.6
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.metric("VAM Estimada", f"**{v_kmh:.2f} km/h**")
+        
+        st.markdown("---")
+        st.subheader("Ritmos de Carrera para Acondicionamiento:")
+        
+        ritmos = pd.DataFrame({
+            '% VAM': [100, 95, 90, 85, 80],
+            'Velocidad (km/h)': [v_kmh, v_kmh * 0.95, v_kmh * 0.90, v_kmh * 0.85, v_kmh * 0.80]
+        })
+        
+        def kmh_to_min_km(kmh):
+            if kmh == 0: return "N/D"
+            min_per_km = 60 / kmh
+            minutes = int(min_per_km)
+            seconds = int((min_per_km - minutes) * 60)
+            return f"{minutes}:{seconds:02d}"
+
+        ritmos['Ritmo (min/km)'] = ritmos['Velocidad (km/h)'].apply(kmh_to_min_km)
+        ritmos['Velocidad (km/h)'] = ritmos['Velocidad (km/h)'].round(2)
+        
+        st.dataframe(ritmos.set_index('% VAM'), use_container_width=True)
+    else:
+        st.info("Ingresa los datos de la prueba para calcular el VAM.")
+
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 6: RANKING (Visible para todos)
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
