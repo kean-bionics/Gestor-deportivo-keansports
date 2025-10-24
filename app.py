@@ -26,7 +26,7 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness
+# Archivo 6: Readiness (Mantenemos la carga por si se usa la lógica del guardado)
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
@@ -156,7 +156,7 @@ def load_perfil_data():
         'Fecha_Nacimiento': ['1994-01-01', '1999-05-10', '2002-01-20'],
         'Documento': ['999', '12345678', '87654321'],
         'Altura_cm': [180, 178, 165],
-        'Sexo': ['Hombre', 'Hombre', 'Mujer'], # Agregada columna Sexo para TMB
+        'Sexo': ['Hombre', 'Hombre', 'Mujer'],
         'Posicion': ['Entrenador', 'Delantero', 'Defensora'],
         'Email': ['tu@mail.com', 'juan@mail.com', 'ana@mail.com']
     }
@@ -167,7 +167,6 @@ def load_perfil_data():
             df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
             df_perfil.columns = df_perfil.columns.str.strip()
             
-            # Añadir 'Sexo' si no existe
             if 'Sexo' not in df_perfil.columns:
                  df_perfil['Sexo'] = 'Hombre'
                  
@@ -279,7 +278,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data() 
+df_readiness, readiness_status = load_readiness_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -524,8 +523,25 @@ def highlight_imminent_events(df):
     
     return styles
 
-# --- FUNCIONES NUEVAS PARA CÁLCULO DE NUTRICIÓN ---
+# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
+def calculate_and_sort_ranking(df):
+    """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
+    
+    for col in ['Oros', 'Platas', 'Bronces']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
+    
+    df_sorted = df.sort_values(
+        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
+        ascending=[False, False, False, False]
+    ).copy()
+    
+    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
+    
+    return df_sorted
 
+# --- FUNCIÓN CLAVE PARA LA FC MAX (TANAKA) Y TMB (MIFFLIN) ---
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
     if sexo == 'Hombre':
@@ -533,6 +549,7 @@ def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     else: # Mujer
         tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) - 161
     return round(tmb)
+
 
 # -------------------------------------------
 
@@ -602,7 +619,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (AGREGAMOS GESTION_PESO_TAB y RECUPERACION_TAB)
+# Definición de pestañas (INCLUYENDO ACONDICIONAMIENTO, GESTIÓN DE PESO Y RECUPERACIÓN)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
@@ -610,8 +627,8 @@ if rol_actual == 'Entrenador':
         "📅 Calendario", 
         "👤 Perfil", 
         "🏃 Acondicionamiento", 
-        "⚖️ Gestión de Peso", # Nueva
-        "🌡️ Recuperación", # Nueva
+        "⚖️ Gestión de Peso",
+        "🌡️ Recuperación",
         "🏆 Ranking"
     ])
 else:
@@ -620,8 +637,8 @@ else:
         "📅 Calendario", 
         "👤 Perfil", 
         "🏃 Acondicionamiento", 
-        "⚖️ Gestión de Peso", # Nueva
-        "🌡️ Recuperación", # Nueva
+        "⚖️ Gestión de Peso",
+        "🌡️ Recuperación",
         "🏆 Ranking"
     ])
 
@@ -644,7 +661,7 @@ if not df_imminent.empty:
     st.toast(f"¡Evento Inminente! '{event_name}' en {days} días. ¡A revisarlo! ⏰", icon="⏰")
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 1: VISTA ENTRENADOR (Solo visible para Entrenador)
+## PESTA 1: VISTA ENTRENADOR (Solo visible para Entrenador)
 # ----------------------------------------------------------------------------------
 if rol_actual == 'Entrenador':
     with tab1:
@@ -742,7 +759,7 @@ if rol_actual == 'Entrenador':
                 st.error("❌ No se pudieron guardar los cambios.")
     
 # ----------------------------------------------------------------------------------
-## PESTAÑA 2: CALCULADORA DE CARGA (Visible para todos)
+## PESTA 2: CALCULADORA DE CARGA (Visible para todos)
 # ----------------------------------------------------------------------------------
 calc_tab = tab2 
 
@@ -995,7 +1012,7 @@ with PERFIL_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: ACONDICIONAMIENTO 
+## PESTAÑA 5: ACONDICIONAMIENTO (CONTENIDO ANTES DE RANKING)
 # ----------------------------------------------------------------------------------
 with ACOND_TAB:
     st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
@@ -1088,6 +1105,7 @@ with ACOND_TAB:
     else:
         st.info("Ingresa los datos de la prueba para calcular el VAM.")
 
+
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 6: GESTIÓN DE PESO (NUEVA PESTAÑA)
 # ----------------------------------------------------------------------------------
@@ -1095,6 +1113,7 @@ with ACOND_TAB:
 with GESTION_PESO_TAB:
     st.header("⚖️ Gestión de Peso y Nutrición")
     
+    # Extracción de datos del perfil
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
     datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
 
@@ -1105,7 +1124,7 @@ with GESTION_PESO_TAB:
     sexo = datos_perfil.get('Sexo', 'Hombre') if datos_perfil is not None else 'Hombre'
 
 
-    st.subheader("1. Cálculo de Tasa Metabólica Basal ($\text{TMB}$)")
+    st.subheader("1. Cálculo de Tasa Metabólica Basal (TMB)")
     
     col_peso, col_alt, col_edad_sexo = st.columns(3)
     
@@ -1114,23 +1133,26 @@ with GESTION_PESO_TAB:
             "Peso Corporal (kg):", 
             min_value=0.0, 
             value=float(peso_kg) if pd.notna(peso_kg) and peso_kg > 0 else 70.0, 
-            step=0.5
+            step=0.5,
+            key='gestion_peso_input' 
         )
     with col_alt:
         altura_input = st.number_input(
             "Altura (cm):", 
             min_value=0.0, 
             value=float(altura_cm) if pd.notna(altura_cm) and altura_cm > 0 else 175.0, 
-            step=1.0
+            step=1.0,
+            key='gestion_altura_input'
         )
     with col_edad_sexo:
         edad_input = st.number_input(
             "Edad (años):", 
             min_value=1, 
             value=int(edad_anos) if pd.notna(edad_anos) and edad_anos > 0 else 25, 
-            step=1
+            step=1,
+            key='gestion_edad_input'
         )
-        sexo_input = st.selectbox("Sexo:", options=['Hombre', 'Mujer'], index=0 if sexo == 'Hombre' else 1)
+        sexo_input = st.selectbox("Sexo:", options=['Hombre', 'Mujer'], index=0 if sexo == 'Hombre' else 1, key='gestion_sexo_input')
         
     
     if peso_input > 0 and altura_input > 0 and edad_input > 0:
@@ -1138,7 +1160,7 @@ with GESTION_PESO_TAB:
         
         st.markdown("<br>", unsafe_allow_html=True)
         st.metric(
-            "Tasa Metabólica Basal ($\text{TMB}$)", 
+            "Tasa Metabólica Basal (TMB)", 
             f"**{tmb_calc} kcal/día** (Fórmula de Mifflin-St Jeor)"
         )
 
@@ -1147,35 +1169,41 @@ with GESTION_PESO_TAB:
         
         col_act, col_obj = st.columns(2)
         
+        act_factors = {
+            "Sedentario (poco o ningún ejercicio)": 1.2,
+            "Ligero (ejercicio 1-3 días/sem)": 1.375,
+            "Moderado (ejercicio 3-5 días/sem)": 1.55,
+            "Alto (ejercicio 6-7 días/sem)": 1.725,
+            "Muy Alto (entrenamientos 2 veces/día)": 1.9
+        }
+        
         with col_act:
-            factor_actividad = st.selectbox(
+            factor_label = st.selectbox(
                 "Nivel de Actividad:",
-                options={
-                    "Sedentario (poco o ningún ejercicio)": 1.2,
-                    "Ligero (ejercicio 1-3 días/sem)": 1.375,
-                    "Moderado (ejercicio 3-5 días/sem)": 1.55,
-                    "Alto (ejercicio 6-7 días/sem)": 1.725,
-                    "Muy Alto (entrenamientos 2 veces/día)": 1.9
-                },
-                format_func=lambda x: x.split(" (")[0]
+                options=list(act_factors.keys()),
+                key='gestion_act_input'
             )
+            factor_actividad = act_factors[factor_label] # Extraemos el valor numérico
+
+        obj_factors = {
+            "Mantenimiento": 0,
+            "Definición (Bajar peso)": -500,
+            "Volumen (Subir peso)": 500
+        }
         
         with col_obj:
-            objetivo_calorico = st.selectbox(
+            objetivo_label = st.selectbox(
                 "Objetivo de Peso:",
-                options={
-                    "Mantenimiento": 0,
-                    "Definición (Bajar peso)": -500,
-                    "Volumen (Subir peso)": 500
-                },
-                format_func=lambda x: x
+                options=list(obj_factors.keys()),
+                key='gestion_obj_input'
             )
+            objetivo_calorico = obj_factors[objetivo_label] # Extraemos el valor numérico
             
-        get_calc = round(tmb_calc * factor_actividad)
+        get_calc = round(tmb_calc * factor_actividad) 
         calorias_objetivo = get_calc + objetivo_calorico
 
         st.metric(
-            "Gasto Energético Total ($\text{GET}$)",
+            "Gasto Energético Total (GET)",
             f"{get_calc} kcal/día"
         )
         st.metric(
@@ -1186,7 +1214,7 @@ with GESTION_PESO_TAB:
         st.markdown("---")
         st.subheader("3. Hidratación Sugerida 💧")
         
-        agua_litros = round(peso_input * 0.035, 1) # 35ml por kg de peso
+        agua_litros = round(peso_input * 0.035, 1) 
         
         st.metric(
             "Agua Sugerida",
@@ -1207,27 +1235,27 @@ with RECUPERACION_TAB:
     st.header("🌡️ Protocolos de Recuperación y Movilidad")
     st.markdown("---")
 
-    st.subheader("1. Guía Rápida de Termoterapia y $\text{Crioterapia}$")
+    st.subheader("1. Guía Rápida de Termoterapia y Crioterapia")
     st.caption("Métodos de recuperación activa para reducir la inflamación y acelerar la reparación muscular.")
     
     col_crio, col_termo = st.columns(2)
     
     with col_crio:
-        st.error("Protocolo de Baño de Hielo ($\text{Crioterapia}$)")
+        st.error("Protocolo de Baño de Hielo (Crioterapia)")
         st.markdown("""
         - **Objetivo:** Reducción de la inflamación muscular post-entrenamiento intenso.
-        - **Temperatura:** $10 \text{ °C}$ - $15 \text{ °C}$
-        - **Duración:** **$10 \text{ minutos}$** (No exceder $\text{15 minutos}$)
-        - **Timing:** Inmediatamente o hasta **$1 \text{ hora}$** después del ejercicio.
+        - **Temperatura:** 10 °C - 15 °C
+        - **Duración:** **10 minutos** (No exceder 15 minutos)
+        - **Timing:** Inmediatamente o hasta **1 hora** después del ejercicio.
         - **Advertencia:** Evitar después de entrenamientos de fuerza pura/hipertrofia, ya que puede limitar las adaptaciones.
         """)
         
     with col_termo:
-        st.warning("Protocolo de Sauna/Calor ($\text{Termoterapia}$)")
+        st.warning("Protocolo de Sauna/Calor (Termoterapia)")
         st.markdown("""
         - **Objetivo:** Relajación, aumento del flujo sanguíneo y desintoxicación.
-        - **Temperatura:** $70 \text{ °C}$ - $90 \text{ °C}$
-        - **Duración:** **$15 \text{ - } 20 \text{ minutos}$**
+        - **Temperatura:** 70 °C - 90 °C
+        - **Duración:** **15 - 20 minutos**
         - **Timing:** En días de descanso o varias horas después de un entrenamiento para promover la relajación.
         - **Advertencia:** Asegurarse de estar bien hidratado antes, durante y después del uso.
         """)
@@ -1237,11 +1265,11 @@ with RECUPERACION_TAB:
     st.caption("El sueño es tu herramienta de recuperación más poderosa.")
     
     st.info("""
-    - **Duración Ideal:** **$8 \text{ - } 10 \text{ horas}$** por noche.
+    - **Duración Ideal:** **8 - 10 horas** por noche.
     - **Consistencia:** Mantener horarios de sueño regulares, incluso los fines de semana.
     - **Ambiente:** Dormir en una habitación oscura, fresca y tranquila.
-    - **Cafeína/Comidas:** Evitar cafeína y comidas pesadas **$3 \text{ horas}$** antes de acostarse.
-    - **Dispositivos:** Evitar pantallas (teléfono, tablet) al menos **$30 \text{ minutos}$** antes de dormir (Luz Azul).
+    - **Cafeína/Comidas:** Evitar cafeína y comidas pesadas **3 horas** antes de acostarse.
+    - **Dispositivos:** Evitar pantallas (teléfono, tablet) al menos **30 minutos** antes de dormir (Luz Azul).
     """)
     
     st.markdown("---")
@@ -1256,7 +1284,7 @@ with RECUPERACION_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTA 8: RANKING (Visible para todos)
+## PESTAÑA 8: RANKING (Visible para todos)
 # ----------------------------------------------------------------------------------
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
