@@ -24,7 +24,6 @@ PRUEBAS_FILE = 'pruebas_activas.xlsx'
 
 # Archivo 4: Perfiles de Atletas
 PERFILES_FILE = 'perfiles.xlsx'
-# Note: Se eliminan las listas de REQUIRED_COLUMNS para los archivos que migran, ya que Sheets los manejará
 
 # Archivo 5: Ranking
 RANKING_FILE = 'ranking.xlsx'
@@ -38,14 +37,172 @@ READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposi
 LOGO_PATH = 'logo.png' 
 
 
-# --- CONFIGURACIÓN DE GOOGLE SHEETS (CRÍTICO) ---
-# REEMPLAZA LOS VALORES DE EJEMPLO CON TUS URLs REALES
-GS_ATLETAS_URL = "URL_DE_TU_HOJA_ATLETAS_AQUI" 
-GS_PERFILES_URL = "URL_DE_TU_HOJA_PERFILES_AQUI"
-GS_RANKING_URL = "URL_DE_TU_HOJA_RANKING_AQUI"
-GS_READINESS_URL = "URL_DE_TU_HOJA_READINESS_AQUI"
-GS_CALENDAR_URL = "URL_DE_TU_HOJA_CALENDARIO_AQUI" 
+# --- CONFIGURACIÓN DE GOOGLE SHEETS (CRÍTICO: TUS URLs PEGADAS) ---
+GS_ATLETAS_URL = "https://docs.google.com/spreadsheets/d/1FB7RRgikMQIsTKmaSDU6yXDjkKp7tx4R/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
+GS_PERFILES_URL = "https://docs.google.com/spreadsheets/d/17PNuhgOP3QeE9ramQ06FfYdfTCFNdZks/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
+GS_RANKING_URL = "https://docs.google.com/spreadsheets/d/1K_ajXoEZv7d_ZbxUrabDpuktGfa_c817/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
+GS_READINESS_URL = "https://docs.google.com/spreadsheets/d/1R8Uaix9fMWzAScLdSyNbs_-mecvDYPMx/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
+GS_CALENDAR_URL = "https://docs.google.com/spreadsheets/d/1MLQER-HCr7V7549OD5b3zKdeEPSCm_mY/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true" 
+GS_TESTS_URL = "https://docs.google.com/spreadsheets/d/134DrZ0XPs0uPHKUpDQZC6Xbn9bZ8S25-/edit?usp=sharing&ouid=105993200479877589405&rtpof=true&sd=true"
 # ------------------------------------------------
+
+
+# --- FUNCIONES DE CÁLCULO (DEBES TENERLAS EN TU CÓDIGO) ---
+# Si no tenías estas funciones, debes añadirlas a tu app.py o la calculadora fallará.
+# Estas funciones son esenciales para la lógica de la Pestaña 2.
+
+def calcular_porcentaje_rm(rm_value, porcentaje):
+    """Calcula la carga al porcentaje dado del RM."""
+    if rm_value <= 0: return 0.0
+    return round(rm_value * (porcentaje / 100), 1)
+
+def calcular_carga_por_rir(rm_value, rir_target):
+    """Estima la carga basada en el RM y el RIR objetivo (basado en el RPE/RIR)."""
+    if rm_value <= 0: return 0.0, 0.0
+    
+    # Tabla de pérdida de porcentaje típica por RIR (Ajustable)
+    # RIR 4 (RPE 6) -> 70%
+    # RIR 3 (RPE 7) -> 75%
+    # RIR 2 (RPE 8) -> 80%
+    # RIR 1 (RPE 9) -> 90%
+    # RIR 0 (RPE 10) -> 100%
+    
+    perc_map = {
+        4: 0.70,
+        3: 0.75,
+        2: 0.80,
+        1: 0.90,
+        0: 1.00
+    }
+    
+    perc_sugerido = perc_map.get(rir_target, 0.75) # Default al 75% si no encuentra
+    
+    # Un RIR de 2-3 repeticiones se asocia típicamente con un 80-85% del 1RM
+    # Ajustamos el porcentaje para el cálculo, buscando el peso que te permite hacer 'X' reps
+    
+    # Esta es una simplificación de la tabla de Epley/Brzycki:
+    # Asumimos que quieres hacer N reps con ese RIR
+    
+    # El porcentaje de 1RM que se levanta en RIR 0 (fallo) es el 1RM.
+    # El porcentaje de 1RM levantado al FALLO (RIR 0) con 5 repeticiones es típicamente ~85%
+    
+    # Si el atleta quiere 5 reps (target_reps=5) con RIR=2, eso es 7 reps en total antes del fallo.
+    # Factor de porcentaje de 1RM (basado en el número total de repeticiones antes del fallo):
+    # Total Reps = Reps Objetivo + RIR
+    # Si Total Reps = 5 (RIR 0) -> 85%
+    # Si Total Reps = 7 (RIR 2) -> 77.5%
+    
+    # Usaremos una aproximación simple basada en la pérdida de 2.5% por rep adicional
+    reps_extra = 5 # Asumimos 5 repeticiones objetivo para el cálculo
+    
+    total_reps_antes_fallo = reps_extra + rir_target
+    
+    # Basado en la fórmula del RIR (ajustada para el factor 0.025/rep)
+    if total_reps_antes_fallo >= 10:
+        perc = 0.65
+    elif total_reps_antes_fallo >= 8:
+        perc = 0.725
+    elif total_reps_antes_fallo >= 6:
+        perc = 0.80
+    elif total_reps_antes_fallo >= 4:
+        perc = 0.875
+    else: # Total Reps = 1
+        perc = 0.95
+        
+    peso_calculado = rm_value * perc
+    
+    # Retornar el peso calculado y el porcentaje para fines informativos
+    return round(peso_calculado, 1), round(perc * 100, 1)
+
+def descomponer_placas(peso_requerido, peso_barra):
+    """Descompone el peso requerido en placas por lado, asumiendo una barra fija."""
+    if peso_requerido <= peso_barra:
+        return "Peso < Barra", {}
+    
+    peso_neto = peso_requerido - peso_barra
+    peso_por_lado = peso_neto / 2
+    
+    # Placas disponibles (de mayor a menor)
+    placas_disp = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5, 0.25]
+    placas_por_lado = {}
+    
+    peso_restante = peso_por_lado
+    
+    for placa in placas_disp:
+        if peso_restante >= placa:
+            cantidad = int(peso_restante // placa)
+            placas_por_lado[placa] = cantidad
+            peso_restante -= cantidad * placa
+            
+    # Redondear el peso restante para evitar errores de coma flotante
+    if round(peso_restante, 2) > 0.01:
+        # Si aún queda peso por poner, puede ser un error en el cálculo o una placa pequeña no listada.
+        pass
+        
+    return peso_requerido, placas_por_lado
+
+def get_days_until(date_obj):
+    """Calcula los días restantes hasta la fecha dada."""
+    if pd.isna(date_obj):
+        return 999 
+    try:
+        if isinstance(date_obj, str):
+             date_obj = datetime.strptime(date_obj, '%Y-%m-%d').date()
+        elif isinstance(date_obj, datetime):
+            date_obj = date_obj.date()
+        
+        today = datetime.now().date()
+        delta = (date_obj - today).days
+        return delta
+    except Exception:
+        return 999
+
+def highlight_imminent_events(df):
+    """Aplica formato condicional a los eventos inminentes (0 a 5 días)."""
+    days = df['Days_Until']
+    is_imminent = (days >= 0) & (days <= 5)
+    
+    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+    
+    styles.loc[is_imminent, :] = 'background-color: #f7a072; color: black;' # Naranja suave
+    
+    return styles
+
+# --- FUNCIONES DE LOGIN (Deben estar en tu código) ---
+
+def login_form():
+    """Muestra el formulario de inicio de sesión."""
+    with st.form("login_form"):
+        st.subheader("Acceso")
+        user = st.text_input("Usuario (Atleta o Entrenador):", key='login_user')
+        password = st.text_input("Contraseña:", type='password', key='login_password')
+        
+        submitted = st.form_submit_button("Iniciar Sesión")
+        
+        if submitted:
+            df = load_data()[0]
+            if df.empty:
+                st.error("No se pudo cargar la base de datos de atletas. Contacta al soporte.")
+                return
+            
+            user_row = df[(df['Atleta'] == user) & (df['Contraseña'] == password)]
+            
+            if not user_row.empty:
+                st.session_state['logged_in'] = True
+                st.session_state['atleta_nombre'] = user_row['Atleta'].iloc[0]
+                st.session_state['rol'] = user_row['Rol'].iloc[0]
+                st.rerun()
+            else:
+                st.error("Usuario o Contraseña incorrectos.")
+
+def logout():
+    """Botón de cerrar sesión."""
+    if st.session_state['logged_in']:
+        if st.sidebar.button("Cerrar Sesión", type="secondary"):
+            st.session_state['logged_in'] = False
+            del st.session_state['atleta_nombre']
+            del st.session_state['rol']
+            st.rerun()
 
 
 # --- FUNCIÓN DE CONEXIÓN A GOOGLE SHEETS (CACHEADA) ---
@@ -78,11 +235,10 @@ def load_data():
 
         if df.empty or 'Atleta' not in df.columns:
              status_message = "ADVERTENCIA: La hoja de atletas está vacía o no tiene la columna 'Atleta'."
-             # Se asegura que el DF tenga al menos las columnas para evitar NameError en el editor
              df = pd.DataFrame(columns=df.columns if not df.empty else REQUIRED_COLUMNS) 
         
         if 'Última_Fecha' in df.columns:
-            df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
+            df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce').dt.date
             
         return df, "Datos de atletas cargados de Google Sheets." 
         
@@ -117,7 +273,7 @@ def load_tests_data():
     if not conn: return pd.DataFrame(), "Error de conexión."
     
     try:
-        df_tests = conn.read(spreadsheet=GS_TESTS_URL, ttl=3600) # Asumiendo que esta URL se definió en las constantes
+        df_tests = conn.read(spreadsheet=GS_TESTS_URL, ttl=3600)
         df_tests.columns = df_tests.columns.str.strip()
         
         df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
@@ -176,7 +332,6 @@ def load_ranking_data():
         
         if df_ranking.empty:
              status_message = "ADVERTENCIA: La hoja de ranking está vacía."
-             # Aseguramos que el DF tenga al menos las columnas para evitar fallos
              df_ranking = pd.DataFrame(columns=RANKING_REQUIRED_COLUMNS + ['Puntos']) 
 
         if not df_ranking.empty:
@@ -198,10 +353,9 @@ def load_readiness_data():
         df_readiness.columns = df_readiness.columns.str.strip()
         
         if df_readiness.empty:
-             # Asegura que las columnas existan
              df_readiness = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS) 
 
-        df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
+        df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce').dt.date
         
         return df_readiness, "Datos de bienestar cargados de Sheets."
     except Exception as e:
@@ -211,7 +365,7 @@ def load_readiness_data():
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
 df_atletas, initial_status = load_data() 
-df_calendario_full, _ = load_calendar_data() # No necesitamos el status del calendario
+df_calendario_full, _ = load_calendar_data()
 df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
 df_pruebas_full, tests_status = load_tests_data() 
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
@@ -237,12 +391,12 @@ def save_main_data(df_edited):
             df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
         
         cols = df_edited.columns.tolist()
-        if 'Última_Fecha' in cols:
-            cols.remove('Última_Fecha')
-            cols.append('Última_Fecha')
+        # Asegurarse que las columnas requeridas esten
+        for col in REQUIRED_COLUMNS:
+            if col not in cols:
+                df_edited[col] = np.nan
         
-        valid_cols = [col for col in cols if not pd.isna(df_edited[col]).all()]
-        df_to_save = df_edited[valid_cols].copy()
+        df_to_save = df_edited[cols].copy()
         
         # 1. Borrar todos los datos existentes en la hoja
         conn.clear(spreadsheet=GS_ATLETAS_URL)
@@ -266,7 +420,7 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
         
     new_entry = {
         'Atleta': atleta, 
-        'Fecha': pd.to_datetime(fecha), 
+        'Fecha': pd.to_datetime(fecha).date(), 
         'Sueño': sueno, 
         'Molestias': molestias, 
         'Disposicion': disposicion
@@ -275,14 +429,14 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     new_df = pd.DataFrame([new_entry])
     
     try:
-        # Usa append para añadir una nueva fila sin sobrescribir el resto
+        # Usa insert para añadir una nueva fila sin sobrescribir el resto
         conn.insert(df=new_df, spreadsheet=GS_READINESS_URL, headers=False) 
         load_readiness_data.clear() 
         return load_readiness_data()[0], True
         
     except Exception as e:
         st.error(f"Error al guardar el registro de bienestar en Sheets: {e}")
-        return load_readiness_data()[0], False # Retorna el DF actual para evitar que la app se rompa
+        return load_readiness_data()[0], False
     
 def save_tests_data(df_edited):
     """Guarda el DataFrame editado de pruebas activas SOBRE GOOGLE SHEETS."""
@@ -295,8 +449,7 @@ def save_tests_data(df_edited):
         df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
         df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
         
-        # Sobrescribir el archivo completo
-        conn.clear(spreadsheet=GS_TESTS_URL) # Asumiendo que esta URL se definió en las constantes
+        conn.clear(spreadsheet=GS_TESTS_URL)
         conn.write(df=df_to_save, spreadsheet=GS_TESTS_URL, headers=True)
         
         load_tests_data.clear()
@@ -336,7 +489,7 @@ def save_ranking_data(df_edited):
     try:
         df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
         df_sorted = calculate_and_sort_ranking(df_cleaned)
-        df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS] # Guarda solo las columnas requeridas
+        df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS] 
         
         conn.clear(spreadsheet=GS_RANKING_URL)
         conn.write(df=df_to_save, spreadsheet=GS_RANKING_URL, headers=True)
@@ -352,7 +505,6 @@ def save_ranking_data(df_edited):
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
-# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
 if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
     st.toast(initial_status, icon="📝")
 if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
@@ -376,7 +528,11 @@ if not st.session_state['logged_in']:
     
     logo_col, spacer_col = st.columns([1, 10])
     with logo_col:
-        st.image(LOGO_PATH, width=120) 
+        # Aquí se asume que 'logo.png' está en la carpeta raíz
+        if os.path.exists(LOGO_PATH):
+            st.image(LOGO_PATH, width=120) 
+        else:
+            st.warning("No se encontró el archivo logo.png")
     
     st.markdown("---") 
 
@@ -407,7 +563,9 @@ st.title("💪 RM & Rendimiento Manager")
 logout() 
 
 if st.session_state['logged_in']:
-    st.sidebar.image(LOGO_PATH, width=100)
+    # Asegúrate de que la ruta exista en Streamlit Cloud o usa un logo por defecto.
+    if os.path.exists(LOGO_PATH):
+        st.sidebar.image(LOGO_PATH, width=100)
     st.sidebar.markdown("---")
 
 rol_actual = st.session_state['rol']
@@ -459,14 +617,14 @@ if rol_actual == 'Entrenador':
                 load_readiness_data.clear()
                 st.rerun() 
         with col_recarga_pruebas:
-            if st.button("Recargar Calendario", help="Recarga 'calendario_data.xlsx'."):
+            if st.button("Recargar Calendario/Pruebas", help="Recarga 'calendario_data.xlsx' y 'pruebas_activas.xlsx'."):
                 load_calendar_data.clear()
                 load_tests_data.clear()
                 st.rerun()
 
         st.markdown("---")
         st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-        st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna al archivo **atletas_data.xlsx** manualmente, subirlo a GitHub y luego hacer clic en 'Recargar Datos Atletas...'.")
+        st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna al archivo **atletas_data** en Google Sheets manualmente para que el código la reconozca.")
 
         df_editor_main = df_atletas.copy()
         
@@ -509,22 +667,22 @@ if rol_actual == 'Entrenador':
 
         st.markdown("---")
         st.subheader("2. Gestión de Pruebas (Modularidad de la Calculadora)")
-        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito. Puedes borrar filas haciendo clic en el número de fila.**")
+        st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito.** La columna **ColumnaRM** debe coincidir exactamente con el encabezado en la hoja de Atletas.")
         
         # --- TABLA EDITABLE DE PRUEBAS ---
         
         # 1. Widget de edición
         df_edited = st.data_editor(
-            df_pruebas_full, # Usamos el DF COMPLETO
-            num_rows="dynamic", # Permite añadir y eliminar filas
+            df_pruebas_full,
+            num_rows="dynamic",
             column_config={
                 "Visible": st.column_config.CheckboxColumn(
                     "Visible",
                     help="Marca para mostrar la prueba en la calculadora.",
                     default=False,
                 ),
-                "ColumnaRM": st.column_config.Column("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en Datos de Atletas (Ej: Biceps_RM)"), 
-                "NombrePrueba": st.column_config.Column("NombrePrueba"),
+                "ColumnaRM": st.column_config.TextColumn("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en la Hoja de Atletas (Ej: Biceps_RM)"), 
+                "NombrePrueba": st.column_config.TextColumn("NombrePrueba"),
             },
             use_container_width=True,
             key="tests_data_editor"
@@ -548,7 +706,6 @@ calc_tab = tab2
 with calc_tab:
     st.header("🧮 Calculadora de Carga")
     
-    # Manejo de error si el atleta no está en el DF después de la edición
     if atleta_actual not in df_atletas['Atleta'].values:
         st.error(f"El atleta '{atleta_actual}' no se encuentra en la base de datos. Por favor, contacta al entrenador o cierra sesión.")
         st.stop()
@@ -561,11 +718,10 @@ with calc_tab:
     col_ejercicio, col_barra = st.columns([2, 1])
 
     with col_ejercicio:
-        # Usamos el DF FILTRADO (df_pruebas)
         ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
-            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas'.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
             ejercicio_default = st.selectbox(
@@ -580,7 +736,6 @@ with calc_tab:
             if not columna_rm_series.empty:
                 columna_rm = columna_rm_series.iloc[0]
             
-            # Buscar el valor de RM en el DataFrame de Atletas, incluso si es una columna nueva
             if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
                 rm_inicial = float(datos_usuario[columna_rm]) 
             
@@ -648,7 +803,6 @@ with calc_tab:
     st.markdown("---")
     st.subheader("Conversión de Placas")
     
-    # Usar el peso del estimador RIR para la conversión, ya que es el cálculo más específico
     peso_conversion = peso_calculado_rir if peso_calculado_rir > 0 else peso_calculado_perc
 
     col_conversion, col_placas = st.columns([1, 1])
@@ -705,7 +859,6 @@ with calc_tab:
 # ----------------------------------------------------------------------------------
 with CALENDAR_TAB:
     st.header("📅 Calendario de Pruebas y Actividades")
-    st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
     
     if rol_actual == 'Entrenador':
         st.subheader("Gestión de Cronograma (Vista Entrenador)")
@@ -750,7 +903,7 @@ with CALENDAR_TAB:
         st.subheader(f"Próximos Eventos Habilitados para {atleta_actual}")
         eventos_mostrar = df_calendario.copy()
     
-    # --- LÓGICA DE RESALTADO (Fuera de la función de estilo) ---
+    # --- LÓGICA DE RESALTADO ---
     if not eventos_mostrar.empty:
         eventos_mostrar['Days_Until'] = eventos_mostrar['Fecha'].apply(get_days_until)
         
@@ -767,7 +920,6 @@ with CALENDAR_TAB:
 # ----------------------------------------------------------------------------------
 with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
 
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
 
@@ -788,11 +940,11 @@ with PERFIL_TAB:
                 st.metric(label=key.replace('_', ' ').title(), value=value_display)
 
     else:
-        st.warning(f"No se encontró información de perfil para **{atleta_actual}** en el archivo {PERFILES_FILE}. Por favor, verifique el Excel.")
+        st.warning(f"No se encontró información de perfil para **{atleta_actual}** en la base de datos.")
 
     if rol_actual == 'Entrenador':
         st.markdown("---")
-        st.subheader("Gestión de Perfiles (Vista Entrenador)")
+        st.subheader("Datos Crudos de Perfiles (Vista Entrenador)")
         st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
         st.dataframe(df_perfiles, use_container_width=True)
 
@@ -858,18 +1010,15 @@ with BIENESTAR_TAB:
 with RANKING_TAB:
     st.header("🏆 Ranking de Atletas")
     st.caption("Ordenado por: **Oros > Platas > Bronces**. (Oro=10, Plata=3, Bronce=1)")
-    st.caption(f"Archivo de origen: **{RANKING_FILE}**")
     
     if rol_actual == 'Entrenador':
         st.subheader("Gestión de Ranking (Edición Directa)")
         st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición se recalculará automáticamente al guardar.**")
         
-        # 1. Widget de edición (usando el DF ordenado actual)
         df_edited_ranking = st.data_editor(
-            df_ranking.drop(columns=['Puntos'], errors='ignore'), # Ocultamos Puntos del editor
+            df_ranking.drop(columns=['Puntos'], errors='ignore'),
             num_rows="dynamic",
             column_config={
-                # Deshabilitar Posicion y Puntos porque se calculan automáticamente
                 "Posicion": st.column_config.NumberColumn("Posición", disabled=True),
                 "Atleta": st.column_config.TextColumn("Atleta", required=True),
                 "Categoria": st.column_config.TextColumn("Categoría"),
@@ -881,7 +1030,6 @@ with RANKING_TAB:
             key="ranking_data_editor"
         )
         
-        # 2. Botón de guardado
         if st.button("💾 Guardar y Recalcular Ranking", type="primary", key="save_ranking_data_btn"):
             if save_ranking_data(df_edited_ranking):
                 st.success("✅ Ranking recalculado, ordenado y guardado con éxito. Recargando aplicación...")
@@ -892,7 +1040,6 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader("Clasificación Actual")
 
-    # Muestra el ranking ordenado (usa df_ranking global, que ya está ordenado)
     st.dataframe(
         df_ranking.drop(columns=['Puntos'], errors='ignore'), 
         use_container_width=True,
@@ -905,7 +1052,6 @@ with RANKING_TAB:
         height=35 * (len(df_ranking) + 1)
     )
 
-    # Mostrar la posición del atleta actual de forma destacada
     current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
     if not current_athlete_rank.empty:
         rank_data = current_athlete_rank.iloc[0]
