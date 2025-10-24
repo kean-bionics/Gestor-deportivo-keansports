@@ -2,6 +2,6 @@ streamlit
 pandas
 numpy
 openpyxl
-streamlit-gsheets
+streamlit-gsheets-connection
 Pillow
 
