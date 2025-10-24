@@ -4,7 +4,7 @@ import numpy as np
 import os
 import io
 from PIL import Image
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time # Importar time para el cálculo de VAM
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -26,7 +26,7 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness (Mantenemos la carga de datos por si quieres usar el historial más adelante)
+# Archivo 6: Readiness (Mantenemos la carga por si se usa en el futuro)
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
@@ -46,7 +46,6 @@ def load_data():
     if excel_exists:
         try:
             df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
-            
             df.columns = df.columns.str.strip() 
             
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
@@ -273,7 +272,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data() # Mantenemos la carga para evitar errores de NameError
+df_readiness, readiness_status = load_readiness_data() # Se mantiene la carga por si se usa la lógica después
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -586,7 +585,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (ELIMINAMOS BIENESTAR_TAB)
+# Definición de pestañas (Quitamos BIENESTAR_TAB para simplificar)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏆 Ranking"
