@@ -273,7 +273,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data()
+df_readiness, readiness_status = load_readiness_data() 
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -586,7 +586,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (INCLUYENDO ACONDICIONAMIENTO)
+# Definición de pestañas (CORREGIDA: AÑADIMOS ACOND_TAB)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🏆 Ranking"
@@ -735,7 +735,7 @@ with calc_tab:
         ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
-            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas'.")
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
             ejercicio_default = st.selectbox(
@@ -966,21 +966,19 @@ with PERFIL_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: ACONDICIONAMIENTO (CONTENIDO ANTES DE RANKING)
+## PESTAÑA 5: ACONDICIONAMIENTO (NUEVA PESTAÑA)
 # ----------------------------------------------------------------------------------
 with ACOND_TAB:
     st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
     
-    # Obtener datos del atleta para usar la edad en el cálculo de FC Max
-    # Manejamos errores si el atleta no existe o la columna Edad no es numérica
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
     
     if not datos_perfil.empty:
         datos_perfil = datos_perfil.iloc[0]
         edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
         
-        # Fórmula FC Máx: 220 - Edad (Tananka o Fox y Haskell son más precisas pero usamos la simple)
-        fc_max_estimada = 220 - edad if not pd.isna(edad) else "N/D"
+        # Fórmula FC Máx: Tanaka (208 - 0.7 * edad)
+        fc_max_estimada = round(208 - (0.7 * edad)) if not pd.isna(edad) else "N/D" # <--- FÓRMULA DE TANAKA
 
         st.subheader("1. Frecuencia Cardíaca Máxima (FC Máx) y Zonas")
         
@@ -989,12 +987,13 @@ with ACOND_TAB:
             st.metric("Edad Registrada (Aprox.)", f"{int(edad) if not pd.isna(edad) else 'N/D'} años")
             
         with col_fc:
-            st.metric("FC Máx Estimada", f"**{fc_max_estimada} ppm** (Fórmula 220 - Edad)")
+            st.metric("FC Máx Estimada", f"**{fc_max_estimada} ppm** (Fórmula de Tanaka)")
 
         if not pd.isna(fc_max_estimada) and isinstance(fc_max_estimada, int):
             st.markdown("---")
             st.subheader("Zonas de Entrenamiento Basadas en FC Máx")
             
+            # Zonas de FC estándar
             zonas = {
                 "Zona 1 (50%-60%)": f"{round(fc_max_estimada * 0.50)} - {round(fc_max_estimada * 0.60)} ppm",
                 "Zona 2 (60%-70%)": f"{round(fc_max_estimada * 0.60)} - {round(fc_max_estimada * 0.70)} ppm",
@@ -1021,13 +1020,13 @@ with ACOND_TAB:
     col_dist, col_min, col_sec = st.columns(3)
 
     with col_dist:
-        test_dist = st.number_input("Distancia Total de la Prueba (metros):", min_value=100, value=2000, step=100)
+        test_dist = st.number_input("Distancia Total de la Prueba (metros):", min_value=100, value=2000, step=100, key='acond_dist')
     
     with col_min:
-        test_minutes = st.number_input("Tiempo de Prueba: Minutos:", min_value=0, value=7, step=1)
+        test_minutes = st.number_input("Tiempo de Prueba: Minutos:", min_value=0, value=7, step=1, key='acond_min')
         
     with col_sec:
-        test_seconds = st.number_input("Tiempo de Prueba: Segundos:", min_value=0, max_value=59, value=30, step=5)
+        test_seconds = st.number_input("Tiempo de Prueba: Segundos:", min_value=0, max_value=59, value=30, step=5, key='acond_sec')
 
     total_seconds = (test_minutes * 60) + test_seconds
     
