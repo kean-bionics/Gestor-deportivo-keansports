@@ -278,7 +278,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data()
+df_readiness, readiness_status = load_readiness_data() # Mantenemos la carga por si se usa la lógica después
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -544,6 +544,10 @@ def calculate_and_sort_ranking(df):
 # --- FUNCIÓN CLAVE PARA LA FC MAX (TANAKA) Y TMB (MIFFLIN) ---
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
+    # Asegurarse de que el input sea válido antes de calcular
+    if peso_kg <= 0 or altura_cm <= 0 or edad_anos <= 0:
+        return 0
+
     if sexo == 'Hombre':
         tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) + 5
     else: # Mujer
@@ -1113,11 +1117,9 @@ with ACOND_TAB:
 with GESTION_PESO_TAB:
     st.header("⚖️ Gestión de Peso y Nutrición")
     
-    # Extracción de datos del perfil
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
     datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
 
-    # Extracción de datos con manejo de NaNs/None
     peso_kg = datos_rm.get('PesoCorporal', 0) if datos_rm is not None else 0
     altura_cm = datos_perfil.get('Altura_cm', 0) if datos_perfil is not None else 0
     edad_anos = pd.to_numeric(datos_perfil.get('Edad', 0), errors='coerce', downcast='integer') if datos_perfil is not None else 0
@@ -1142,7 +1144,7 @@ with GESTION_PESO_TAB:
             min_value=0.0, 
             value=float(altura_cm) if pd.notna(altura_cm) and altura_cm > 0 else 175.0, 
             step=1.0,
-            key='gestion_altura_input'
+            key='gestion_altura_input' 
         )
     with col_edad_sexo:
         edad_input = st.number_input(
@@ -1150,7 +1152,7 @@ with GESTION_PESO_TAB:
             min_value=1, 
             value=int(edad_anos) if pd.notna(edad_anos) and edad_anos > 0 else 25, 
             step=1,
-            key='gestion_edad_input'
+            key='gestion_edad_input' 
         )
         sexo_input = st.selectbox("Sexo:", options=['Hombre', 'Mujer'], index=0 if sexo == 'Hombre' else 1, key='gestion_sexo_input')
         
@@ -1183,7 +1185,7 @@ with GESTION_PESO_TAB:
                 options=list(act_factors.keys()),
                 key='gestion_act_input'
             )
-            factor_actividad = act_factors[factor_label] # Extraemos el valor numérico
+            factor_actividad = act_factors[factor_label] 
 
         obj_factors = {
             "Mantenimiento": 0,
@@ -1197,7 +1199,7 @@ with GESTION_PESO_TAB:
                 options=list(obj_factors.keys()),
                 key='gestion_obj_input'
             )
-            objetivo_calorico = obj_factors[objetivo_label] # Extraemos el valor numérico
+            objetivo_calorico = obj_factors[objetivo_label]
             
         get_calc = round(tmb_calc * factor_actividad) 
         calorias_objetivo = get_calc + objetivo_calorico
@@ -1228,59 +1230,66 @@ with GESTION_PESO_TAB:
 
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 7: RECUPERACIÓN (NUEVA PESTAÑA)
+## PESTA 7: RECUPERACIÓN (DIAGNÓSTICO DE SESIÓN)
 # ----------------------------------------------------------------------------------
 
 with RECUPERACION_TAB:
-    st.header("🌡️ Protocolos de Recuperación y Movilidad")
-    st.markdown("---")
+    st.header("🧘 Diagnóstico de Recuperación de Sesión (SRD)")
+    st.caption("Evalúa tu estado actual para ajustar la intensidad de tu entrenamiento. **Los datos no se guardan.**")
 
-    st.subheader("1. Guía Rápida de Termoterapia y Crioterapia")
-    st.caption("Métodos de recuperación activa para reducir la inflamación y acelerar la reparación muscular.")
+    # --- MÓDULO 1: ENTRADA DE ESTADO SRD (EN VIVO) ---
+    st.subheader("1. Estado Subjetivo Actual")
+    
+    col_sleep, col_pain, col_ready = st.columns(3)
+    
+    with col_sleep:
+        sueno = st.slider("1. Calidad del Sueño:", min_value=1, max_value=5, value=3, help="1=Pésimo, 5=Excelente", key='session_sueno')
+    
+    with col_pain:
+        molestias = st.slider("2. Nivel de Molestias/Dolor:", min_value=1, max_value=5, value=1, help="1=Ninguna, 5=Severa", key='session_molestias')
+        
+    with col_ready:
+        disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=3, help="1=Baja, 5=Alta", key='session_disposicion')
+        
+    # --- MÓDULO 2: ANÁLISIS DEL ESTADO ---
+    st.markdown("---")
+    st.subheader("2. Recomendación de Intensidad (Análisis SRD)")
+
+    # Cálculo de la Puntuación Media: (Sueño + (5 - Molestias) + Disposición) / 3
+    score = (sueno + (5 - molestias) + disposicion) / 3 
+    
+    if score >= 4.0:
+        st.success(f"🟢 **SCORE SRD: {score:.1f}** (Óptimo)")
+        st.markdown("**Recomendación:** Estás en estado óptimo. Sigue tu programación. Considera aumentar ligeramente la carga si el RPE se siente bajo.", unsafe_allow_html=True)
+    elif score >= 3.0:
+        st.warning(f"🟡 **SCORE SRD: {score:.1f}** (Adecuado)")
+        st.markdown("**Recomendación:** Estado adecuado. Sigue la programación pero respeta estrictamente los RIR/RPE y reduce el volumen si sientes fatiga durante la sesión.", unsafe_allow_html=True)
+    else:
+        st.error(f"🔴 **SCORE SRD: {score:.1f}** (Bajo)")
+        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Considera reducir la intensidad (ej., trabajar con 5% menos de peso) y el volumen. Enfócate en la técnica o realiza una sesión de recuperación activa.", unsafe_allow_html=True)
+        
+    st.markdown("---")
+    
+    # --- MÓDULO 3: PROTOCOLOS DE GUÍA (Información estática) ---
+    st.subheader("3. Protocolos de Recuperación Rápida")
+    st.caption("Guías de referencia para mejorar tu estado actual.")
     
     col_crio, col_termo = st.columns(2)
     
     with col_crio:
         st.error("Protocolo de Baño de Hielo (Crioterapia)")
         st.markdown("""
-        - **Objetivo:** Reducción de la inflamación muscular post-entrenamiento intenso.
+        - **Objetivo:** Reducción de la inflamación muscular.
         - **Temperatura:** 10 °C - 15 °C
-        - **Duración:** **10 minutos** (No exceder 15 minutos)
-        - **Timing:** Inmediatamente o hasta **1 hora** después del ejercicio.
-        - **Advertencia:** Evitar después de entrenamientos de fuerza pura/hipertrofia, ya que puede limitar las adaptaciones.
+        - **Duración:** **10 minutos** (Máx 15 min).
         """)
         
     with col_termo:
-        st.warning("Protocolo de Sauna/Calor (Termoterapia)")
+        st.warning("Protocolo de Sueño Óptimo")
         st.markdown("""
-        - **Objetivo:** Relajación, aumento del flujo sanguíneo y desintoxicación.
-        - **Temperatura:** 70 °C - 90 °C
-        - **Duración:** **15 - 20 minutos**
-        - **Timing:** En días de descanso o varias horas después de un entrenamiento para promover la relajación.
-        - **Advertencia:** Asegurarse de estar bien hidratado antes, durante y después del uso.
+        - **Duración Ideal:** **8 - 10 horas** por noche.
+        - **Consejo:** Evitar pantallas 30 minutos antes de dormir.
         """)
-
-    st.markdown("---")
-    st.subheader("2. Pautas de Sueño para el Atleta de Combate 😴")
-    st.caption("El sueño es tu herramienta de recuperación más poderosa.")
-    
-    st.info("""
-    - **Duración Ideal:** **8 - 10 horas** por noche.
-    - **Consistencia:** Mantener horarios de sueño regulares, incluso los fines de semana.
-    - **Ambiente:** Dormir en una habitación oscura, fresca y tranquila.
-    - **Cafeína/Comidas:** Evitar cafeína y comidas pesadas **3 horas** antes de acostarse.
-    - **Dispositivos:** Evitar pantallas (teléfono, tablet) al menos **30 minutos** antes de dormir (Luz Azul).
-    """)
-    
-    st.markdown("---")
-    st.subheader("3. Enfoque de Movilidad y Estiramiento")
-    st.caption("Movilidad diaria para prevenir lesiones en áreas clave de combate.")
-    
-    st.success("""
-    - **Movilidad Dinámica:** Realizar antes de cada entrenamiento para preparar las articulaciones. (Ej: Rotaciones de hombros, balanceo de piernas).
-    - **Movilidad Estática:** Realizar *solo* después del entrenamiento o en días de descanso activo (nunca antes de la fuerza o potencia).
-    - **Zonas Focales:** Prioridad en **Caderas** (flexores/rotadores), **Hombros** (manguito rotador) y **Columna Torácica** (rotación).
-    """)
 
 
 # ----------------------------------------------------------------------------------
