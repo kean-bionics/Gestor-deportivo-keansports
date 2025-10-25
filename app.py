@@ -603,9 +603,9 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (CORREGIDA, AÑADIENDO REFLEJOS_TAB)
+# Definición de pestañas (AÑADIMOS REFLEJOS_TAB)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJJOS_TAB = st.tabs([
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJOS_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
         "🧮 Calculadora de Carga", 
         "📅 Calendario", 
@@ -1431,7 +1431,7 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Completa")
+        st.subheader("Clasificación Actual")
     else:
         st.subheader("Clasificación Completa")
 
@@ -1559,7 +1559,7 @@ with REFLEJOS_TAB:
     if st.session_state.reflejos_state == 'READY':
         st.subheader("Presiona Iniciar para Comenzar")
         if st.button("▶️ INICIAR PRUEBA DE REFLEJOS", use_container_width=True, on_click=start_game_logic, type="primary"):
-            pass
+            pass # La función start_game ya maneja el rerun
 
     elif st.session_state.reflejos_state == 'DONE':
         st.success("🎉 PRUEBA COMPLETADA. Revisa tus resultados.")
@@ -1571,9 +1571,7 @@ with REFLEJOS_TAB:
         if st.session_state.reflejos_state == 'WAITING' or st.session_state.reflejos_state == 'WAITING_NEW':
             
             if st.session_state.reflejos_state == 'WAITING_NEW':
-                # Pausa necesaria para que el usuario lea el mensaje (el rerun es demasiado rápido)
                 time_module.sleep(1.0) 
-                # Reiniciar para la siguiente ronda
                 st.session_state.reflejos_state = 'WAITING'
                 st.session_state.tiempo_inicio = time_module.time()
                 st.session_state.wait_time = random.uniform(wait_min, wait_max)
@@ -1630,13 +1628,12 @@ with REFLEJOS_TAB:
         
         # 4. Forzar re-renderizado si estamos en WAITING (para actualizar el tiempo)
         if st.session_state.reflejos_state == 'WAITING':
-             # Usar un componente html vacío con el script de rerun (Streamlit lo maneja mejor)
-             st.markdown('<script>setTimeout(() => window.parent.document.querySelector("button[kind=secondary]").click(), 100);</script>', unsafe_allow_html=True)
-             
+             time_module.sleep(0.05) # Pausa pequeña
+             st.rerun() 
+        
     # --- RESULTADOS FINALES ---
     if st.session_state.reflejos_state == 'DONE':
-        # Filtramos tiempos inválidos (penalizaciones)
-        results = [t for t in st.session_state.tiempos_reaccion if t >= 0] 
+        results = [t for t in st.session_state.tiempos_reaccion if t >= 0] # Excluir penalizaciones
         
         st.markdown("---")
         st.subheader("📊 Resultados de Reacción")
@@ -1663,33 +1660,120 @@ with REFLEJOS_TAB:
             st.info("No se registraron tiempos válidos. Asegúrate de hacer clic solo cuando la luz esté verde.")
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 3: CALENDARIO (Visible para todos)
+## PESTAÑA 6: RANKING (Visible para todos)
 # ----------------------------------------------------------------------------------
-# ... (Bloque de código de la Pestaña 3: CALENDARIO, queda igual)
+with RANKING_TAB:
+    st.header("🏆 Ranking de Atletas")
+    st.caption("Ordenado por: **Oros > Platas > Bronces**. (Oro=10, Plata=3, Bronce=1)")
+    st.caption(f"Archivo de origen: **{RANKING_FILE}**")
+    
+    # --- Lógica de Podio Visual (TOP 3) ---
+    if not df_ranking.empty:
+        st.markdown("---")
+        st.subheader("🥇 Top 3 Ranking Distrital") 
 
-# ----------------------------------------------------------------------------------
-## PESTAÑA 4: PERFIL (Visible para todos)
-# ----------------------------------------------------------------------------------
-# ... (Bloque de código de la Pestaña 4: PERFIL, queda igual)
+        df_top3 = df_ranking.head(3).copy()
+        
+        pos_1 = df_top3[df_top3['Posicion'] == 1].iloc[0] if len(df_top3) >= 1 else None
+        pos_2 = df_top3[df_top3['Posicion'] == 2].iloc[0] if len(df_top3) >= 2 else None
+        pos_3 = df_top3[df_top3['Posicion'] == 3].iloc[0] if len(df_top3) >= 3 else None
 
-# ----------------------------------------------------------------------------------
-## PESTAÑA 5: ACONDICIONAMIENTO (CONTENIDO ANTES DE RANKING)
-# ----------------------------------------------------------------------------------
-# ... (Bloque de código de la Pestaña 5: ACONDICIONAMIENTO, queda igual)
+        # Usamos 3 columnas: [Posición 2, Posición 1, Posición 3]
+        col2, col1, col3 = st.columns([1, 1, 1])
 
-# ----------------------------------------------------------------------------------
-## PESTAÑA 6: GESTIÓN DE PESO (NUEVA PESTAÑA)
-# ----------------------------------------------------------------------------------
-# ... (Bloque de código de la Pestaña 6: GESTIÓN DE PESO, queda igual)
+        # POSICIÓN 2 (Plata)
+        with col2:
+            st.markdown("<br><br>", unsafe_allow_html=True) 
+            if pos_2 is not None:
+                st.info(f"**🥈 {pos_2['Atleta']}**")
+                st.markdown(f"<h2 style='text-align: center; color: silver;'>2do Puesto</h2>", unsafe_allow_html=True) 
+                
+            else:
+                 st.info("🥈 ---")
 
-# ----------------------------------------------------------------------------------
-## PESTAÑA 7: RECUPERACIÓN (DIAGNÓSTICO DE SESIÓN)
-# ----------------------------------------------------------------------------------
-# ... (Bloque de código de la Pestaña 7: RECUPERACIÓN, queda igual)
+        # POSICIÓN 1 (Oro)
+        with col1:
+            if pos_1 is not None:
+                st.success(f"**🥇 {pos_1['Atleta']}**")
+                st.markdown(f"<h1 style='text-align: center; color: gold;'>1er Puesto</h1>", unsafe_allow_html=True)
+            else:
+                 st.success("🥇 ---")
 
-# ----------------------------------------------------------------------------------
-## PESTAÑA 8: RANKING (Visible para todos)
-# ----------------------------------------------------------------------------------
-# ... (Bloque de código de la Pestaña 8: RANKING, queda igual)
+        # POSICIÓN 3 (Bronce)
+        with col3:
+            st.markdown("<br><br><br>", unsafe_allow_html=True) 
+            if pos_3 is not None:
+                st.error(f"**🥉 {pos_3['Atleta']}**") 
+                st.markdown(f"<h3 style='text-align: center; color: brown;'>3er Puesto</h3>", unsafe_allow_html=True) 
+            else:
+                 st.error("🥉 ---")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- VISTA DE GESTIÓN (ENTRENADOR) ---
+    if rol_actual == 'Entrenador':
+        st.markdown("---")
+        st.subheader("Gestión de Ranking (Edición Directa)")
+        st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición se recalculará automáticamente al guardar.**")
+        
+        df_edited_ranking = st.data_editor(
+            df_ranking.drop(columns=['Puntos'], errors='ignore'),
+            num_rows="dynamic",
+            column_config={
+                "Posicion": st.column_config.NumberColumn("Posición", disabled=True),
+                "Atleta": st.column_config.TextColumn("Atleta", required=True),
+                "Categoria": st.column_config.TextColumn("Categoría"),
+                "Oros": st.column_config.NumberColumn("🥇 Oros"),
+                "Platas": st.column_config.NumberColumn("🥈 Platas"),
+                "Bronces": st.column_config.NumberColumn("🥉 Bronces"),
+            },
+            use_container_width=True,
+            key="ranking_data_editor"
+        )
+        
+        if st.button("💾 Guardar y Recalcular Ranking", type="primary", key="save_ranking_data_btn"):
+            if save_ranking_data(df_edited_ranking):
+                st.success("✅ Ranking recalculado, ordenado y guardado con éxito. Recargando aplicación...")
+                st.rerun()
+            else:
+                st.error("❌ No se pudieron guardar los cambios en el ranking.")
+        
+        st.markdown("---")
+        st.subheader("Clasificación Completa")
+    else:
+        st.subheader("Clasificación Completa")
+
+    # --- TABLA COMPLETA (Visible para todos) ---
+    if df_ranking.empty:
+        st.info("No hay datos de ranking para mostrar. El entrenador debe cargar el archivo.")
+    else:
+        cols_to_show = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
+        
+        st.dataframe(
+            df_ranking[cols_to_show], 
+            use_container_width=True,
+            column_config={
+                "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
+                "Oros": st.column_config.NumberColumn("🥇 Oros", format="%d"),
+                "Platas": st.column_config.NumberColumn("🥈 Platas", format="%d"),
+                "Bronces": st.column_config.NumberColumn("🥉 Bronces", format="%d"),
+            },
+            height=35 * (len(df_ranking) + 1)
+        )
+
+        # Mostrar la posición del atleta actual de forma destacada
+        current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
+        if not current_athlete_rank.empty:
+            rank_data = current_athlete_rank.iloc[0]
+            st.markdown("---")
+            st.subheader(f"Tu Posición Actual: {atleta_actual}")
+            
+            col_rank, col_medals = st.columns(2)
+            
+            col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
+            
+            medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
+            col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
+
 
 # --- FIN DEL CÓDIGO ---
