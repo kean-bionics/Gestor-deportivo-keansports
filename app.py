@@ -259,7 +259,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data()
+df_readiness, readiness_status = load_readiness_data() 
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -601,7 +601,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas
+# Definición de pestañas (CORREGIDA)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
@@ -1045,6 +1045,7 @@ with ACOND_TAB:
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
     
     if datos_perfil is not None:
+        datos_perfil = datos_perfil.iloc[0] if isinstance(datos_perfil, pd.DataFrame) else datos_perfil
         edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
         
         # Fórmula FC Máx: Tanaka (208 - 0.7 * edad)
@@ -1063,7 +1064,7 @@ with ACOND_TAB:
             st.markdown("---")
             st.subheader("Visualización de Zonas de Entrenamiento")
             
-            # --- LÓGICA DEL GRÁFICO ---
+            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
             
             fc_max_int = int(fc_max_estimada)
             
@@ -1100,12 +1101,13 @@ with ACOND_TAB:
             col_z2.metric("Zona 4 (80%-90%)", f"{df_zonas.loc['Zona 4: Umbral']['Mínimo (ppm)']} - {df_zonas.loc['Zona 4: Umbral']['Máximo (ppm)']} ppm")
             col_z3.metric("Zona 5 (90%-100%)", f"{df_zonas.loc['Zona 5: Máxima']['Mínimo (ppm)']} - {df_zonas.loc['Zona 5: Máxima']['Máximo (ppm)']} ppm")
 
+        # --- Fin de la lógica del gráfico ---
     else:
         st.info("No se puede calcular la FC Máx. Asegúrate de que la columna 'Edad' esté registrada en tu perfil.")
 
     st.markdown("---")
     
-    # --- MÓDULO 2: ESTIMACIÓN VAM Y RITMOS ---
+    # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
     st.subheader("3. Estimador de Ritmo de Carrera (VAM)")
     
     col_dist, col_min, col_sec = st.columns(3)
@@ -1159,7 +1161,7 @@ with GESTION_PESO_TAB:
     st.header("⚖️ Gestión de Peso y Nutrición")
     
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
-    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if datos_rm is not None else None # Fix: Asegurarse de que datos_rm se extraiga de df_atletas
+    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
 
     peso_kg = datos_rm.get('PesoCorporal', 0) if datos_rm is not None else 0
     altura_cm = datos_perfil.get('Altura_cm', 0) if datos_perfil is not None else 0
