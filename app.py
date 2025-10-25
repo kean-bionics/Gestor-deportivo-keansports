@@ -732,9 +732,9 @@ if rol_actual == 'Entrenador':
 
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="secondary", key="save_tests_data_btn"):
-            df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
+            df_edited = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
-            if save_tests_data(df_edited_cleaned):
+            if save_tests_data(df_edited):
                 st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
                 st.rerun()
             else:
@@ -1088,7 +1088,6 @@ with ACOND_TAB:
             df_zonas = pd.DataFrame(zonas_data)
             df_zonas.set_index('Zona', inplace=True)
             
-            # Gráfico de barras de las zonas de FC
             st.bar_chart(df_zonas, use_container_width=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
