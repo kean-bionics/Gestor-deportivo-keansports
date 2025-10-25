@@ -26,7 +26,7 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness
+# Archivo 6: Readiness (Mantenemos la carga por si se usa la lógica del guardado)
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
@@ -180,25 +180,6 @@ def load_perfil_data():
 
     return df_perfil, status_message
 
-
-# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
-def calculate_and_sort_ranking(df):
-    """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
-    
-    for col in ['Oros', 'Platas', 'Bronces']:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        
-    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
-    
-    df_sorted = df.sort_values(
-        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
-        ascending=[False, False, False, False]
-    ).copy()
-    
-    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
-    
-    return df_sorted
-
 @st.cache_data(ttl=3600)
 def load_ranking_data():
     """Carga los datos de ranking, los calcula, ordena y crea el archivo si no existe."""
@@ -278,7 +259,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data() 
+df_readiness, readiness_status = load_readiness_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -620,7 +601,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (CORREGIDA)
+# Definición de pestañas
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
@@ -988,7 +969,7 @@ with PERFIL_TAB:
     datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
     
     if datos_perfil is None:
-        st.warning("No se encontró información de perfil (Altura, Edad, etc.). Edita la hoja de Perfiles.")
+        st.warning("No se encontró información de perfil (Altura, Edad, Sexo, etc.). Edita la hoja de Perfiles.")
         datos_perfil = pd.Series({'Edad': np.nan, 'Altura_cm': np.nan, 'Sexo': 'Hombre'})
     
     # --- MÓDULO 1: INFORMACIÓN PERSONAL ---
@@ -1082,10 +1063,9 @@ with ACOND_TAB:
             st.markdown("---")
             st.subheader("Visualización de Zonas de Entrenamiento")
             
-            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
+            # --- LÓGICA DEL GRÁFICO ---
             
-            # 1. Definir los límites de las zonas
-            fc_max_int = int(fc_max_estimada) # Aseguramos entero para los cálculos
+            fc_max_int = int(fc_max_estimada)
             
             zonas_data = {
                 "Zona": ["Zona 1: Muy Ligera", "Zona 2: Ligera", "Zona 3: Aeróbica", "Zona 4: Umbral", "Zona 5: Máxima"],
@@ -1107,10 +1087,8 @@ with ACOND_TAB:
             df_zonas = pd.DataFrame(zonas_data)
             df_zonas.set_index('Zona', inplace=True)
             
-            # 2. Mostrar gráfico de barras 
             st.bar_chart(df_zonas, use_container_width=True)
 
-            # 3. Mostrar la tabla con los rangos exactos (mantenemos la tabla original como referencia)
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("Rangos Exactos de Entrenamiento (ppm)")
             
@@ -1121,14 +1099,13 @@ with ACOND_TAB:
             col_z2.metric("Zona 3 (70%-80%)", f"{df_zonas.loc['Zona 3: Aeróbica']['Mínimo (ppm)']} - {df_zonas.loc['Zona 3: Aeróbica']['Máximo (ppm)']} ppm")
             col_z2.metric("Zona 4 (80%-90%)", f"{df_zonas.loc['Zona 4: Umbral']['Mínimo (ppm)']} - {df_zonas.loc['Zona 4: Umbral']['Máximo (ppm)']} ppm")
             col_z3.metric("Zona 5 (90%-100%)", f"{df_zonas.loc['Zona 5: Máxima']['Mínimo (ppm)']} - {df_zonas.loc['Zona 5: Máxima']['Máximo (ppm)']} ppm")
-            
-        # --- Fin de la lógica del gráfico ---
+
     else:
         st.info("No se puede calcular la FC Máx. Asegúrate de que la columna 'Edad' esté registrada en tu perfil.")
 
-
-    # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
     st.markdown("---")
+    
+    # --- MÓDULO 2: ESTIMACIÓN VAM Y RITMOS ---
     st.subheader("3. Estimador de Ritmo de Carrera (VAM)")
     
     col_dist, col_min, col_sec = st.columns(3)
@@ -1182,7 +1159,7 @@ with GESTION_PESO_TAB:
     st.header("⚖️ Gestión de Peso y Nutrición")
     
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
-    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
+    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if datos_rm is not None else None # Fix: Asegurarse de que datos_rm se extraiga de df_atletas
 
     peso_kg = datos_rm.get('PesoCorporal', 0) if datos_rm is not None else 0
     altura_cm = datos_perfil.get('Altura_cm', 0) if datos_perfil is not None else 0
@@ -1350,10 +1327,11 @@ with RECUPERACION_TAB:
         """)
         
     with col_termo:
-        st.warning("Protocolo de Sueño Óptimo")
+        st.info("Pautas de Sueño Óptimo")
         st.markdown("""
         - **Duración Ideal:** **8 - 10 horas** por noche.
-        - **Consejo:** Evitar pantallas 30 minutos antes de dormir.
+        - **Ambiente:** Oscuro, fresco y silencioso.
+        - **Regla Digital:** Evitar pantallas 30 minutos antes de dormir.
         """)
 
     st.markdown("---")
