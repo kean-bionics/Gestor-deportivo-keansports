@@ -3,9 +3,8 @@ import pandas as pd
 import numpy as np
 import os
 import io
-import time as time_module # Renombramos 'time' para evitar conflicto con datetime.time
 from PIL import Image
-from datetime import datetime, timedelta, time # datetime.time para el VAM
+from datetime import datetime, timedelta, time
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -27,7 +26,7 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness
+# Archivo 6: Readiness (Mantenemos la carga por si se usa la lógica del guardado)
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
@@ -1065,7 +1064,7 @@ with ACOND_TAB:
             st.markdown("---")
             st.subheader("Visualización de Zonas de Entrenamiento")
             
-            # --- LÓGICA DEL GRÁFICO ---
+            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
             
             fc_max_int = int(fc_max_estimada)
             
@@ -1428,9 +1427,7 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Completa")
-    else:
-        st.subheader("Clasificación Completa")
+        st.subheader("Clasificación Actual")
 
     # --- TABLA COMPLETA (Visible para todos) ---
     if df_ranking.empty:
