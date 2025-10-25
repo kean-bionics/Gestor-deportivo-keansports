@@ -26,7 +26,7 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness (Mantenemos la carga por si se usa la lógica del guardado)
+# Archivo 6: Readiness
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
@@ -523,6 +523,18 @@ def highlight_imminent_events(df):
     
     return styles
 
+# --- FUNCIÓN CLAVE PARA LA FC MAX (TANAKA) Y TMB (MIFFLIN) ---
+def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
+    """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
+    if peso_kg <= 0 or altura_cm <= 0 or edad_anos <= 0:
+        return 0
+
+    if sexo == 'Hombre':
+        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) + 5
+    else: # Mujer
+        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) - 161
+    return round(tmb)
+
 # --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
 def calculate_and_sort_ranking(df):
     """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
@@ -540,20 +552,6 @@ def calculate_and_sort_ranking(df):
     df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
     
     return df_sorted
-
-# --- FUNCIÓN CLAVE PARA LA FC MAX (TANAKA) Y TMB (MIFFLIN) ---
-def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
-    """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
-    if peso_kg <= 0 or altura_cm <= 0 or edad_anos <= 0:
-        return 0
-
-    if sexo == 'Hombre':
-        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) + 5
-    else: # Mujer
-        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) - 161
-    return round(tmb)
-
-
 # -------------------------------------------
 
 
@@ -622,7 +620,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (INCLUYENDO ACONDICIONAMIENTO, GESTIÓN DE PESO Y RECUPERACIÓN)
+# Definición de pestañas (CORREGIDA)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
@@ -987,21 +985,17 @@ with PERFIL_TAB:
     st.caption(f"Archivos de origen: Atletas y Perfiles")
 
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
-    
-    # Manejo si no existe el perfil (pero si existe el usuario)
-    if datos_perfil is None:
-        st.warning("No se encontró información de perfil (Altura, Edad, etc.) para el diagnóstico. Edita la hoja de Perfiles.")
-        datos_perfil = pd.Series({'Edad': np.nan, 'Altura_cm': np.nan, 'Sexo': 'Hombre'}) # Valores de relleno
-
-    # Extracción de RM y Peso Corporal (con manejo de NaNs)
     datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
+    
+    if datos_perfil is None:
+        st.warning("No se encontró información de perfil (Altura, Edad, etc.). Edita la hoja de Perfiles.")
+        datos_perfil = pd.Series({'Edad': np.nan, 'Altura_cm': np.nan, 'Sexo': 'Hombre'})
     
     # --- MÓDULO 1: INFORMACIÓN PERSONAL ---
     st.subheader("Información Personal")
     
     col_personal_1, col_personal_2 = st.columns(2)
     
-    # Mostrar datos del perfil
     for i, (key, value) in enumerate(datos_perfil.drop(labels=['Atleta', 'Sexo'], errors='ignore').items()):
         if key.lower() == 'fecha_nacimiento' and pd.notna(value):
             value_display = value.strftime('%Y-%m-%d') if isinstance(value, pd.Timestamp) else str(value)
@@ -1014,7 +1008,7 @@ with PERFIL_TAB:
     st.markdown("---")
     st.subheader("Diagnóstico de Fuerza Relativa y Composición Corporal")
     
-    # Extracción de valores seguros
+    # Extracción de valores seguros para cálculos
     peso_kg = float(datos_rm.get('PesoCorporal', 0)) if datos_rm is not None and pd.notna(datos_rm.get('PesoCorporal')) else 0
     sentadilla_rm = float(datos_rm.get('Sentadilla_RM', 0)) if datos_rm is not None and pd.notna(datos_rm.get('Sentadilla_RM')) else 0
     pressbanca_rm = float(datos_rm.get('PressBanca_RM', 0)) if datos_rm is not None and pd.notna(datos_rm.get('PressBanca_RM')) else 0
@@ -1029,7 +1023,7 @@ with PERFIL_TAB:
         imc = 0
         imc_display = "N/D"
 
-    # Cálculo de Fuerza Relativa y Ratio
+    # Cálculo de Fuerza Relativa
     rel_squat = round(sentadilla_rm / peso_kg, 2) if peso_kg > 0 and sentadilla_rm > 0 else 0
     rel_bench = round(pressbanca_rm / peso_kg, 2) if peso_kg > 0 and pressbanca_rm > 0 else 0
     ratio_sq_bp = round(sentadilla_rm / pressbanca_rm, 2) if pressbanca_rm > 0 and sentadilla_rm > 0 else 0
@@ -1056,7 +1050,7 @@ with PERFIL_TAB:
 
     if rol_actual == 'Entrenador':
         st.markdown("---")
-        st.subheader("Datos Crudos de Perfiles (Vista Entrenador)")
+        st.subheader("Gestión de Perfiles (Vista Entrenador)")
         st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
         st.dataframe(df_perfiles, use_container_width=True)
 
@@ -1086,31 +1080,56 @@ with ACOND_TAB:
 
         if not pd.isna(fc_max_estimada) and isinstance(fc_max_estimada, int):
             st.markdown("---")
-            st.subheader("Zonas de Entrenamiento Basadas en FC Máx")
+            st.subheader("Visualización de Zonas de Entrenamiento")
             
-            # Zonas de FC estándar
-            zonas = {
-                "Zona 1 (50%-60%)": f"{round(fc_max_estimada * 0.50)} - {round(fc_max_estimada * 0.60)} ppm",
-                "Zona 2 (60%-70%)": f"{round(fc_max_estimada * 0.60)} - {round(fc_max_estimada * 0.70)} ppm",
-                "Zona 3 (70%-80%)": f"{round(fc_max_estimada * 0.70)} - {round(fc_max_estimada * 0.80)} ppm",
-                "Zona 4 (80%-90%)": f"{round(fc_max_estimada * 0.80)} - {round(fc_max_estimada * 0.90)} ppm",
-                "Zona 5 (90%-100%)": f"{round(fc_max_estimada * 0.90)} - {fc_max_estimada} ppm"
+            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
+            
+            # 1. Definir los límites de las zonas
+            fc_max_int = int(fc_max_estimada) # Aseguramos entero para los cálculos
+            
+            zonas_data = {
+                "Zona": ["Zona 1: Muy Ligera", "Zona 2: Ligera", "Zona 3: Aeróbica", "Zona 4: Umbral", "Zona 5: Máxima"],
+                "Mínimo (ppm)": [
+                    round(fc_max_int * 0.50),
+                    round(fc_max_int * 0.60),
+                    round(fc_max_int * 0.70),
+                    round(fc_max_int * 0.80),
+                    round(fc_max_int * 0.90),
+                ],
+                "Máximo (ppm)": [
+                    round(fc_max_int * 0.60),
+                    round(fc_max_int * 0.70),
+                    round(fc_max_int * 0.80),
+                    round(fc_max_int * 0.90),
+                    fc_max_int
+                ]
             }
+            df_zonas = pd.DataFrame(zonas_data)
+            df_zonas.set_index('Zona', inplace=True)
+            
+            # 2. Mostrar gráfico de barras 
+            st.bar_chart(df_zonas, use_container_width=True)
+
+            # 3. Mostrar la tabla con los rangos exactos (mantenemos la tabla original como referencia)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("Rangos Exactos de Entrenamiento (ppm)")
             
             col_z1, col_z2, col_z3 = st.columns(3)
-            col_z1.markdown(f"**{list(zonas.keys())[0]}**:<br>{list(zonas.values())[0]}", unsafe_allow_html=True)
-            col_z1.markdown(f"**{list(zonas.keys())[1]}**:<br>{list(zonas.values())[1]}", unsafe_allow_html=True)
-            col_z2.markdown(f"**{list(zonas.keys())[2]}**:<br>{list(zonas.values())[2]}", unsafe_allow_html=True)
-            col_z2.markdown(f"**{list(zonas.keys())[3]}**:<br>{list(zonas.values())[3]}", unsafe_allow_html=True)
-            col_z3.markdown(f"**{list(zonas.keys())[4]}**:<br>{list(zonas.values())[4]}", unsafe_allow_html=True)
-
+            
+            col_z1.metric("Zona 1 (50%-60%)", f"{df_zonas.loc['Zona 1: Muy Ligera']['Mínimo (ppm)']} - {df_zonas.loc['Zona 1: Muy Ligera']['Máximo (ppm)']} ppm")
+            col_z1.metric("Zona 2 (60%-70%)", f"{df_zonas.loc['Zona 2: Ligera']['Mínimo (ppm)']} - {df_zonas.loc['Zona 2: Ligera']['Máximo (ppm)']} ppm")
+            col_z2.metric("Zona 3 (70%-80%)", f"{df_zonas.loc['Zona 3: Aeróbica']['Mínimo (ppm)']} - {df_zonas.loc['Zona 3: Aeróbica']['Máximo (ppm)']} ppm")
+            col_z2.metric("Zona 4 (80%-90%)", f"{df_zonas.loc['Zona 4: Umbral']['Mínimo (ppm)']} - {df_zonas.loc['Zona 4: Umbral']['Máximo (ppm)']} ppm")
+            col_z3.metric("Zona 5 (90%-100%)", f"{df_zonas.loc['Zona 5: Máxima']['Mínimo (ppm)']} - {df_zonas.loc['Zona 5: Máxima']['Máximo (ppm)']} ppm")
+            
+        # --- Fin de la lógica del gráfico ---
     else:
         st.info("No se puede calcular la FC Máx. Asegúrate de que la columna 'Edad' esté registrada en tu perfil.")
 
+
+    # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
     st.markdown("---")
-    
-    # --- MÓDULO 2: ESTIMACIÓN VAM Y RITMOS ---
-    st.subheader("2. Estimador de Ritmo de Carrera (VAM)")
+    st.subheader("3. Estimador de Ritmo de Carrera (VAM)")
     
     col_dist, col_min, col_sec = st.columns(3)
 
@@ -1299,8 +1318,8 @@ with RECUPERACION_TAB:
     with col_ready:
         disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=4, help="1=Baja, 5=Alta", key='session_disposicion')
         
-    # Cálculo de la Puntuación Media: (Sueño + (5 - Molestias) + Disposición) / 3
-    score = (sueno + (5 - molestias) + disposicion) / 3 
+    # Cálculo de la Puntuación Media
+    score = (sueno + (5 - molestias) + disposicion) / 3 # (5 - Molestias) invierte la escala
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1312,7 +1331,7 @@ with RECUPERACION_TAB:
         st.markdown("**Recomendación:** Estado adecuado. Procede, pero respeta estrictamente los RIR/RPE y reduce el volumen si sientes fatiga.", unsafe_allow_html=True)
     else:
         st.error(f"🔴 **SCORE SRD: {score:.1f}** (Bajo)")
-        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Reduce la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
+        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Considera reducir la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
 
     st.markdown("---")
     
