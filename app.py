@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import io
-import time as time_module # Importar time como time_module para evitar conflictos
+import time as time_module
 from PIL import Image
 from datetime import datetime, timedelta, time
 import random
@@ -603,9 +603,9 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (AÑADIMOS LA PESTAÑA REFLEJOS y ajustamos el orden)
+# Definición de pestañas (CORREGIDA, AÑADIENDO REFLEJOS_TAB)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJOS_TAB = st.tabs([
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJJOS_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
         "🧮 Calculadora de Carga", 
         "📅 Calendario", 
@@ -614,7 +614,7 @@ if rol_actual == 'Entrenador':
         "⚖️ Gestión de Peso",
         "🌡️ Recuperación",
         "🏆 Ranking",
-        "🧪 Reaction Lab" # NUEVA PESTAÑA
+        "🧪 Reaction Lab"
     ])
 else:
     tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJOS_TAB = st.tabs([
@@ -625,7 +625,7 @@ else:
         "⚖️ Gestión de Peso",
         "🌡️ Recuperación",
         "🏆 Ranking",
-        "🧪 Reaction Lab" # NUEVA PESTAÑA
+        "🧪 Reaction Lab"
     ])
 
 # ----------------------------------------------------------------------------------
@@ -1467,5 +1467,229 @@ with RANKING_TAB:
             medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
             col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
 
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 9: REACTION LAB (NUEVA PESTAÑA: Entrenamiento de Reflejos)
+# ----------------------------------------------------------------------------------
+
+with REFLEJOS_TAB:
+    st.header("🧪 Reaction Lab: Entrenamiento de Reflejos")
+    st.caption("Mide tu tiempo de reacción simple (TCS) al estímulo visual (Luz Roja/Verde).")
+    st.markdown("---")
+    
+    # --- INICIALIZACIÓN DE ESTADO ---
+    if 'reflejos_state' not in st.session_state:
+        st.session_state.reflejos_state = 'READY' # READY, WAITING, GO, DONE
+    if 'tiempos_reaccion' not in st.session_state:
+        st.session_state.tiempos_reaccion = []
+    if 'tiempo_inicio' not in st.session_state:
+        st.session_state.tiempo_inicio = 0.0
+    if 'repeticion_actual' not in st.session_state:
+        st.session_state.repeticion_actual = 0
+    if 'total_reps' not in st.session_state:
+        st.session_state.total_reps = 10 # Default
+    
+    # --- PANEL DE CONFIGURACIÓN ---
+    st.subheader("Configuración de la Sesión")
+    
+    col_reps, col_min, col_max = st.columns(3)
+    
+    with col_reps:
+        total_reps = st.number_input("Número de Repeticiones:", min_value=1, max_value=30, value=10, step=1, key='total_reps_input')
+        st.session_state.total_reps = total_reps # Actualizar el estado para usarlo en el juego
+        
+    with col_min:
+        wait_min = st.number_input("Espera Mínima (seg):", min_value=1.0, value=2.0, step=0.5, format="%.1f", key='wait_min_input')
+        
+    with col_max:
+        wait_max = st.number_input("Espera Máxima (seg):", min_value=2.0, value=4.0, step=0.5, format="%.1f", key='wait_max_input')
+
+    
+    # --- LÓGICA DEL JUEGO ---
+    
+    def start_game_logic():
+        """Inicializa el juego y pone el estado en WAITING."""
+        if st.session_state.wait_max_input <= st.session_state.wait_min_input:
+            st.error("La Espera Máxima debe ser mayor que la Mínima.")
+            return
+
+        st.session_state.tiempos_reaccion = []
+        st.session_state.repeticion_actual = 1
+        st.session_state.reflejos_state = 'WAITING'
+        st.session_state.tiempo_inicio = time_module.time() 
+        
+        # Calcular tiempo de espera aleatorio para el GO
+        st.session_state.wait_time = random.uniform(st.session_state.wait_min_input, st.session_state.wait_max_input)
+        st.session_state.go_time = st.session_state.tiempo_inicio + st.session_state.wait_time
+        
+        st.rerun()
+
+    def handle_click():
+        """Maneja la acción del botón (click)."""
+        current_time = time_module.time()
+        
+        if st.session_state.reflejos_state == 'WAITING':
+            # CLICK PREMATURO (ROJO)
+            st.session_state.tiempos_reaccion.append(-1.0) # Penalización por tiempo falso (usamos -1)
+            st.warning("⚠️ ¡Click Prematuro! Se penalizará esta repetición.")
+            # Pasar a la siguiente ronda (o reiniciar el estado a READY)
+            st.session_state.repeticion_actual += 1
+            st.session_state.reflejos_state = 'WAITING_NEW' # Estado intermedio para esperar antes de la siguiente
+            
+        elif st.session_state.reflejos_state == 'GO':
+            # CLICK CORRECTO (VERDE)
+            reaction_time = current_time - st.session_state.tiempo_inicio
+            st.session_state.tiempos_reaccion.append(reaction_time)
+            st.success(f"✅ Tiempo: {reaction_time:.3f} segundos.")
+            
+            # Pasar a la siguiente repetición
+            st.session_state.repeticion_actual += 1
+            if st.session_state.repeticion_actual <= st.session_state.total_reps:
+                st.session_state.reflejos_state = 'WAITING_NEW' # Siguiente ronda (intermedia)
+            else:
+                st.session_state.reflejos_state = 'DONE'
+        
+        st.rerun()
+
+
+    # --- CONTENEDOR VISUAL PRINCIPAL ---
+    st.markdown("---")
+    
+    # 1. BOTÓN DE INICIO/JUEGO
+    if st.session_state.reflejos_state == 'READY':
+        st.subheader("Presiona Iniciar para Comenzar")
+        if st.button("▶️ INICIAR PRUEBA DE REFLEJOS", use_container_width=True, on_click=start_game_logic, type="primary"):
+            pass
+
+    elif st.session_state.reflejos_state == 'DONE':
+        st.success("🎉 PRUEBA COMPLETADA. Revisa tus resultados.")
+
+    else:
+        # 2. Bucle WAITING/GO
+        
+        # 2a. Lógica de transición de WAITING a GO
+        if st.session_state.reflejos_state == 'WAITING' or st.session_state.reflejos_state == 'WAITING_NEW':
+            
+            if st.session_state.reflejos_state == 'WAITING_NEW':
+                # Pausa necesaria para que el usuario lea el mensaje (el rerun es demasiado rápido)
+                time_module.sleep(1.0) 
+                # Reiniciar para la siguiente ronda
+                st.session_state.reflejos_state = 'WAITING'
+                st.session_state.tiempo_inicio = time_module.time()
+                st.session_state.wait_time = random.uniform(wait_min, wait_max)
+                st.session_state.go_time = st.session_state.tiempo_inicio + st.session_state.wait_time
+                st.rerun()
+            
+            display_color = "#CC0000" # Rojo
+            display_text = "ESPERA..."
+            
+            # Chequear si ha pasado el tiempo de espera para cambiar a GO
+            if time_module.time() >= st.session_state.go_time:
+                st.session_state.reflejos_state = 'GO'
+                st.session_state.tiempo_inicio = time_module.time() # Resetear el tiempo_inicio al GO
+                st.rerun() 
+            
+        elif st.session_state.reflejos_state == 'GO':
+            display_color = "#00AA00" # Verde
+            display_text = "¡CLICK AHORA!"
+            
+        st.subheader(f"Repetición: {st.session_state.repeticion_actual}/{st.session_state.total_reps}")
+
+        # 3. Renderizar el botón de acción (el "área de luz")
+        st.markdown(
+            f"""
+            <style>
+                .reflejo-btn-container {{
+                    background-color: {display_color};
+                    border: 5px solid white;
+                    padding: 50px 0;
+                    text-align: center;
+                    border-radius: 10px;
+                    height: 300px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                .reflejo-btn-text {{
+                    color: white;
+                    font-size: 2.5em;
+                    font-weight: bold;
+                }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.button(
+            display_text, 
+            key='action_button', 
+            use_container_width=True, 
+            on_click=handle_click,
+            help="Haz click tan pronto como la luz cambie a VERDE."
+        )
+        
+        # 4. Forzar re-renderizado si estamos en WAITING (para actualizar el tiempo)
+        if st.session_state.reflejos_state == 'WAITING':
+             # Usar un componente html vacío con el script de rerun (Streamlit lo maneja mejor)
+             st.markdown('<script>setTimeout(() => window.parent.document.querySelector("button[kind=secondary]").click(), 100);</script>', unsafe_allow_html=True)
+             
+    # --- RESULTADOS FINALES ---
+    if st.session_state.reflejos_state == 'DONE':
+        # Filtramos tiempos inválidos (penalizaciones)
+        results = [t for t in st.session_state.tiempos_reaccion if t >= 0] 
+        
+        st.markdown("---")
+        st.subheader("📊 Resultados de Reacción")
+        
+        if results:
+            avg_time = np.mean(results)
+            best_time = np.min(results)
+            worst_time = np.max(results)
+            
+            col_best, col_avg, col_worst = st.columns(3)
+            col_best.metric("Mejor Tiempo (seg)", f"{best_time:.3f} s")
+            col_avg.metric("Promedio (seg)", f"{avg_time:.3f} s")
+            col_worst.metric("Peor Tiempo (seg)", f"{worst_time:.3f} s")
+            
+            # Resumen de Rondas
+            penalties = st.session_state.tiempos_reaccion.count(-1.0)
+            st.caption(f"Rondas completadas: {len(results)}. Intentos Prematuros (Penalizados): {penalties}.")
+            
+            # Historial de tiempos
+            df_historial = pd.DataFrame({'Tiempo (s)': results})
+            st.bar_chart(df_historial, height=250)
+
+        else:
+            st.info("No se registraron tiempos válidos. Asegúrate de hacer clic solo cuando la luz esté verde.")
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 3: CALENDARIO (Visible para todos)
+# ----------------------------------------------------------------------------------
+# ... (Bloque de código de la Pestaña 3: CALENDARIO, queda igual)
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 4: PERFIL (Visible para todos)
+# ----------------------------------------------------------------------------------
+# ... (Bloque de código de la Pestaña 4: PERFIL, queda igual)
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 5: ACONDICIONAMIENTO (CONTENIDO ANTES DE RANKING)
+# ----------------------------------------------------------------------------------
+# ... (Bloque de código de la Pestaña 5: ACONDICIONAMIENTO, queda igual)
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 6: GESTIÓN DE PESO (NUEVA PESTAÑA)
+# ----------------------------------------------------------------------------------
+# ... (Bloque de código de la Pestaña 6: GESTIÓN DE PESO, queda igual)
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 7: RECUPERACIÓN (DIAGNÓSTICO DE SESIÓN)
+# ----------------------------------------------------------------------------------
+# ... (Bloque de código de la Pestaña 7: RECUPERACIÓN, queda igual)
+
+# ----------------------------------------------------------------------------------
+## PESTAÑA 8: RANKING (Visible para todos)
+# ----------------------------------------------------------------------------------
+# ... (Bloque de código de la Pestaña 8: RANKING, queda igual)
 
 # --- FIN DEL CÓDIGO ---
