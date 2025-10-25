@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 import os
 import io
-import time as time_module # Importar time para el juego de reflejos
+import time as time_module # Importar time como time_module para evitar conflictos
 from PIL import Image
 from datetime import datetime, timedelta, time
+import random
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
 
@@ -602,7 +603,7 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (AÑADIMOS LA PESTAÑA REFLEJOS)
+# Definición de pestañas (AÑADIMOS LA PESTAÑA REFLEJOS y ajustamos el orden)
 if rol_actual == 'Entrenador':
     tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJOS_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
@@ -1301,7 +1302,7 @@ with RECUPERACION_TAB:
         disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=4, help="1=Baja, 5=Alta", key='session_disposicion')
         
     # Cálculo de la Puntuación Media
-    score = (sueno + (5 - molestias) + disposicion) / 3 # (5 - Molestias) invierte la escala
+    score = (sueno + (5 - molestias) + disposicion) / 3 
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1430,7 +1431,9 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Actual")
+        st.subheader("Clasificación Completa")
+    else:
+        st.subheader("Clasificación Completa")
 
     # --- TABLA COMPLETA (Visible para todos) ---
     if df_ranking.empty:
