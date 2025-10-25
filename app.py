@@ -180,25 +180,6 @@ def load_perfil_data():
 
     return df_perfil, status_message
 
-
-# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
-def calculate_and_sort_ranking(df):
-    """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
-    
-    for col in ['Oros', 'Platas', 'Bronces']:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        
-    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
-    
-    df_sorted = df.sort_values(
-        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
-        ascending=[False, False, False, False]
-    ).copy()
-    
-    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
-    
-    return df_sorted
-
 @st.cache_data(ttl=3600)
 def load_ranking_data():
     """Carga los datos de ranking, los calcula, ordena y crea el archivo si no existe."""
@@ -278,7 +259,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data()
+df_readiness, readiness_status = load_readiness_data() 
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -751,9 +732,9 @@ if rol_actual == 'Entrenador':
 
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="secondary", key="save_tests_data_btn"):
-            df_edited = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
+            df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
-            if save_tests_data(df_edited):
+            if save_tests_data(df_edited_cleaned):
                 st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
                 st.rerun()
             else:
@@ -1072,7 +1053,7 @@ with ACOND_TAB:
 
         st.subheader("1. Frecuencia Cardíaca Máxima (FC Máx) y Zonas")
         
-        col_edad, col_fc = st.columns(2)
+        col_edad, col_fc = st.columns([1, 1])
         with col_edad:
             st.metric("Edad Registrada (Aprox.)", f"{int(edad) if not pd.isna(edad) else 'N/D'} años")
             
@@ -1083,7 +1064,7 @@ with ACOND_TAB:
             st.markdown("---")
             st.subheader("Visualización de Zonas de Entrenamiento")
             
-            # --- LÓGICA DEL GRÁFICO ---
+            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
             
             fc_max_int = int(fc_max_estimada)
             
@@ -1107,6 +1088,7 @@ with ACOND_TAB:
             df_zonas = pd.DataFrame(zonas_data)
             df_zonas.set_index('Zona', inplace=True)
             
+            # Gráfico de barras de las zonas de FC
             st.bar_chart(df_zonas, use_container_width=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
@@ -1329,7 +1311,7 @@ with RECUPERACION_TAB:
         st.markdown("**Recomendación:** Estado adecuado. Procede, pero respeta estrictamente los RIR/RPE y reduce el volumen si sientes fatiga.", unsafe_allow_html=True)
     else:
         st.error(f"🔴 **SCORE SRD: {score:.1f}** (Bajo)")
-        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Reduce la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
+        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Considera reducir la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
 
     st.markdown("---")
     
@@ -1377,13 +1359,16 @@ with RANKING_TAB:
     # --- Lógica de Podio Visual (TOP 3) ---
     if not df_ranking.empty:
         st.markdown("---")
-        st.subheader("🥇 Top 3 del Campeonato")
+        st.subheader("🥇 Top 3 Ranking Distrital") # Título corregido
 
         df_top3 = df_ranking.head(3).copy()
+        
+        # Extracción segura de datos para el podio
         pos_1 = df_top3[df_top3['Posicion'] == 1].iloc[0] if len(df_top3) >= 1 else None
         pos_2 = df_top3[df_top3['Posicion'] == 2].iloc[0] if len(df_top3) >= 2 else None
         pos_3 = df_top3[df_top3['Posicion'] == 3].iloc[0] if len(df_top3) >= 3 else None
 
+        # Usamos 3 columnas: [Posición 2, Posición 1, Posición 3]
         col2, col1, col3 = st.columns([1, 1, 1])
 
         # POSICIÓN 2 (Plata)
@@ -1391,8 +1376,8 @@ with RANKING_TAB:
             st.markdown("<br><br>", unsafe_allow_html=True) 
             if pos_2 is not None:
                 st.info(f"**🥈 {pos_2['Atleta']}**")
-                st.markdown(f"<h2 style='text-align: center; color: silver;'>{int(pos_2['Platas'])} Platas</h2>", unsafe_allow_html=True)
-                st.metric("Total Medallas", f"{int(pos_2['Oros']) + int(pos_2['Platas']) + int(pos_2['Bronces'])}")
+                st.markdown(f"<h2 style='text-align: center; color: silver;'>{int(pos_2['Oros']) + int(pos_2['Platas']) + int(pos_2['Bronces'])} Medallas</h2>", unsafe_allow_html=True)
+                
             else:
                  st.info("🥈 ---")
 
@@ -1400,8 +1385,7 @@ with RANKING_TAB:
         with col1:
             if pos_1 is not None:
                 st.success(f"**🥇 {pos_1['Atleta']}**")
-                st.markdown(f"<h1 style='text-align: center; color: gold;'>{int(pos_1['Oros'])} Oros</h1>", unsafe_allow_html=True)
-                st.metric("Total Medallas", f"{int(pos_1['Oros']) + int(pos_1['Platas']) + int(pos_1['Bronces'])}")
+                st.markdown(f"<h1 style='text-align: center; color: gold;'>{int(pos_1['Oros']) + int(pos_1['Platas']) + int(pos_1['Bronces'])} Medallas</h1>", unsafe_allow_html=True)
             else:
                  st.success("🥇 ---")
 
@@ -1410,8 +1394,7 @@ with RANKING_TAB:
             st.markdown("<br><br><br>", unsafe_allow_html=True) 
             if pos_3 is not None:
                 st.error(f"**🥉 {pos_3['Atleta']}**") 
-                st.markdown(f"<h3 style='text-align: center; color: brown;'>{int(pos_3['Bronces'])} Bronces</h3>", unsafe_allow_html=True)
-                st.metric("Total Medallas", f"{int(pos_3['Oros']) + int(pos_3['Platas']) + int(pos_3['Bronces'])}")
+                st.markdown(f"<h3 style='text-align: center; color: brown;'>{int(pos_3['Oros']) + int(pos_3['Platas']) + int(pos_3['Bronces'])} Medallas</h3>", unsafe_allow_html=True)
             else:
                  st.error("🥉 ---")
         
@@ -1448,8 +1431,7 @@ with RANKING_TAB:
         st.markdown("---")
         st.subheader("Clasificación Completa")
     else:
-         st.subheader("Clasificación Completa")
-
+        st.subheader("Clasificación Completa")
 
     # --- TABLA COMPLETA (Visible para todos) ---
     if df_ranking.empty:
@@ -1458,7 +1440,7 @@ with RANKING_TAB:
         cols_to_show = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
         
         st.dataframe(
-            df_ranking[cols_to_show],
+            df_ranking[cols_to_show], 
             use_container_width=True,
             column_config={
                 "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
