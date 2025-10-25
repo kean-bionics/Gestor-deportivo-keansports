@@ -6,7 +6,7 @@ import io
 from PIL import Image
 from datetime import datetime, timedelta, time
 
-# --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS ---
+# --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS Y FUNCIONES DE CÁLCULO ---
 
 # Archivo 1: Atletas y Marcas
 EXCEL_FILE = 'atletas_data.xlsx' 
@@ -26,12 +26,43 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness (Mantenemos la carga por si se usa la lógica del guardado)
+# Archivo 6: Readiness
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
 # RUTA DEL LOGO
 LOGO_PATH = 'logo.png' 
+
+# --- FUNCIONES DE CÁLCULO (MOVIDAS AL INICIO PARA EVITAR NAMEERROR) ---
+
+def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
+    """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
+    if peso_kg <= 0 or altura_cm <= 0 or edad_anos <= 0:
+        return 0
+    if sexo == 'Hombre':
+        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) + 5
+    else: # Mujer
+        tmb = (10 * peso_kg) + (6.25 * altura_cm) - (5 * edad_anos) - 161
+    return round(tmb)
+
+def calculate_and_sort_ranking(df):
+    """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
+    
+    for col in ['Oros', 'Platas', 'Bronces']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
+    
+    df_sorted = df.sort_values(
+        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
+        ascending=[False, False, False, False]
+    ).copy()
+    
+    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
+    
+    return df_sorted
+
+# ----------------------------------------------------------------------------------
 
 
 # --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ) ---
@@ -46,7 +77,6 @@ def load_data():
     if excel_exists:
         try:
             df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
-            
             df.columns = df.columns.str.strip() 
             
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
@@ -259,7 +289,7 @@ df_pruebas_full, tests_status = load_tests_data()
 df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
 df_perfiles, perfil_status = load_perfil_data() 
 df_ranking, ranking_status = load_ranking_data()
-df_readiness, readiness_status = load_readiness_data() 
+df_readiness, readiness_status = load_readiness_data()
 
 
 # --- 4. FUNCIONES AUXILIARES ---
@@ -732,9 +762,9 @@ if rol_actual == 'Entrenador':
 
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="secondary", key="save_tests_data_btn"):
-            df_edited = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
+            df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
-            if save_tests_data(df_edited):
+            if save_tests_data(df_edited_cleaned):
                 st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
                 st.rerun()
             else:
@@ -1107,7 +1137,7 @@ with ACOND_TAB:
 
     st.markdown("---")
     
-    # --- MÓDULO 2: ESTIMACIÓN VAM Y RITMOS ---
+    # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
     st.subheader("3. Estimador de Ritmo de Carrera (VAM)")
     
     col_dist, col_min, col_sec = st.columns(3)
@@ -1358,16 +1388,14 @@ with RANKING_TAB:
     # --- Lógica de Podio Visual (TOP 3) ---
     if not df_ranking.empty:
         st.markdown("---")
-        st.subheader("🥇 Top 3 Ranking Distrital") # Título corregido
+        st.subheader("🥇 Top 3 Ranking Distrital") 
 
         df_top3 = df_ranking.head(3).copy()
         
-        # Extracción segura de datos para el podio
         pos_1 = df_top3[df_top3['Posicion'] == 1].iloc[0] if len(df_top3) >= 1 else None
         pos_2 = df_top3[df_top3['Posicion'] == 2].iloc[0] if len(df_top3) >= 2 else None
         pos_3 = df_top3[df_top3['Posicion'] == 3].iloc[0] if len(df_top3) >= 3 else None
 
-        # Usamos 3 columnas: [Posición 2, Posición 1, Posición 3]
         col2, col1, col3 = st.columns([1, 1, 1])
 
         # POSICIÓN 2 (Plata)
@@ -1375,7 +1403,7 @@ with RANKING_TAB:
             st.markdown("<br><br>", unsafe_allow_html=True) 
             if pos_2 is not None:
                 st.info(f"**🥈 {pos_2['Atleta']}**")
-                st.markdown(f"<h2 style='text-align: center; color: silver;'>2do Puesto</h2>", unsafe_allow_html=True) # Actualizado
+                st.markdown(f"<h2 style='text-align: center; color: silver;'>2do Puesto</h2>", unsafe_allow_html=True) 
                 
             else:
                  st.info("🥈 ---")
@@ -1384,7 +1412,7 @@ with RANKING_TAB:
         with col1:
             if pos_1 is not None:
                 st.success(f"**🥇 {pos_1['Atleta']}**")
-                st.markdown(f"<h1 style='text-align: center; color: gold;'>1er Puesto</h1>", unsafe_allow_html=True) # Actualizado
+                st.markdown(f"<h1 style='text-align: center; color: gold;'>1er Puesto</h1>", unsafe_allow_html=True)
             else:
                  st.success("🥇 ---")
 
@@ -1393,7 +1421,7 @@ with RANKING_TAB:
             st.markdown("<br><br><br>", unsafe_allow_html=True) 
             if pos_3 is not None:
                 st.error(f"**🥉 {pos_3['Atleta']}**") 
-                st.markdown(f"<h3 style='text-align: center; color: brown;'>3er Puesto</h3>", unsafe_allow_html=True) # Actualizado
+                st.markdown(f"<h3 style='text-align: center; color: brown;'>3er Puesto</h3>", unsafe_allow_html=True) 
             else:
                  st.error("🥉 ---")
         
@@ -1428,7 +1456,7 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Completa")
+        st.subheader("Clasificación Actual")
     else:
         st.subheader("Clasificación Completa")
 
