@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import io
+import time as time_module # Importar time para el juego de reflejos
 from PIL import Image
 from datetime import datetime, timedelta, time
 
@@ -601,9 +602,9 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas
+# Definición de pestañas (AÑADIMOS LA PESTAÑA REFLEJOS)
 if rol_actual == 'Entrenador':
-    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
+    tab1, tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJOS_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
         "🧮 Calculadora de Carga", 
         "📅 Calendario", 
@@ -611,17 +612,19 @@ if rol_actual == 'Entrenador':
         "🏃 Acondicionamiento", 
         "⚖️ Gestión de Peso",
         "🌡️ Recuperación",
-        "🏆 Ranking"
+        "🏆 Ranking",
+        "🧪 Reaction Lab" # NUEVA PESTAÑA
     ])
 else:
-    tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
+    tab2, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB, REFLEJOS_TAB = st.tabs([
         "🧮 Calculadora de Carga", 
         "📅 Calendario", 
         "👤 Perfil", 
         "🏃 Acondicionamiento", 
         "⚖️ Gestión de Peso",
         "🌡️ Recuperación",
-        "🏆 Ranking"
+        "🏆 Ranking",
+        "🧪 Reaction Lab" # NUEVA PESTAÑA
     ])
 
 # ----------------------------------------------------------------------------------
@@ -1298,7 +1301,7 @@ with RECUPERACION_TAB:
         disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=4, help="1=Baja, 5=Alta", key='session_disposicion')
         
     # Cálculo de la Puntuación Media
-    score = (sueno + (5 - molestias) + disposicion) / 3 
+    score = (sueno + (5 - molestias) + disposicion) / 3 # (5 - Molestias) invierte la escala
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1427,9 +1430,7 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Completa")
-    else:
-        st.subheader("Clasificación Completa")
+        st.subheader("Clasificación Actual")
 
     # --- TABLA COMPLETA (Visible para todos) ---
     if df_ranking.empty:
