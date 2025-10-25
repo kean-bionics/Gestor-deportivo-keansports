@@ -751,9 +751,9 @@ if rol_actual == 'Entrenador':
 
         # 2. Botón de guardado
         if st.button("💾 Guardar Cambios en Pruebas Activas y Aplicar", type="secondary", key="save_tests_data_btn"):
-            df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
+            df_edited = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
-            if save_tests_data(df_edited_cleaned):
+            if save_tests_data(df_edited):
                 st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
                 st.rerun()
             else:
@@ -1083,7 +1083,7 @@ with ACOND_TAB:
             st.markdown("---")
             st.subheader("Visualización de Zonas de Entrenamiento")
             
-            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
+            # --- LÓGICA DEL GRÁFICO ---
             
             fc_max_int = int(fc_max_estimada)
             
@@ -1126,7 +1126,7 @@ with ACOND_TAB:
 
     st.markdown("---")
     
-    # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
+    # --- MÓDULO 2: ESTIMACIÓN VAM Y RITMOS ---
     st.subheader("3. Estimador de Ritmo de Carrera (VAM)")
     
     col_dist, col_min, col_sec = st.columns(3)
@@ -1317,7 +1317,7 @@ with RECUPERACION_TAB:
         disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=4, help="1=Baja, 5=Alta", key='session_disposicion')
         
     # Cálculo de la Puntuación Media
-    score = (sueno + (5 - molestias) + disposicion) / 3 # (5 - Molestias) invierte la escala
+    score = (sueno + (5 - molestias) + disposicion) / 3 
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1329,7 +1329,7 @@ with RECUPERACION_TAB:
         st.markdown("**Recomendación:** Estado adecuado. Procede, pero respeta estrictamente los RIR/RPE y reduce el volumen si sientes fatiga.", unsafe_allow_html=True)
     else:
         st.error(f"🔴 **SCORE SRD: {score:.1f}** (Bajo)")
-        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Considera reducir la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
+        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Reduce la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
 
     st.markdown("---")
     
@@ -1374,7 +1374,52 @@ with RANKING_TAB:
     st.caption("Ordenado por: **Oros > Platas > Bronces**. (Oro=10, Plata=3, Bronce=1)")
     st.caption(f"Archivo de origen: **{RANKING_FILE}**")
     
+    # --- Lógica de Podio Visual (TOP 3) ---
+    if not df_ranking.empty:
+        st.markdown("---")
+        st.subheader("🥇 Top 3 del Campeonato")
+
+        df_top3 = df_ranking.head(3).copy()
+        pos_1 = df_top3[df_top3['Posicion'] == 1].iloc[0] if len(df_top3) >= 1 else None
+        pos_2 = df_top3[df_top3['Posicion'] == 2].iloc[0] if len(df_top3) >= 2 else None
+        pos_3 = df_top3[df_top3['Posicion'] == 3].iloc[0] if len(df_top3) >= 3 else None
+
+        col2, col1, col3 = st.columns([1, 1, 1])
+
+        # POSICIÓN 2 (Plata)
+        with col2:
+            st.markdown("<br><br>", unsafe_allow_html=True) 
+            if pos_2 is not None:
+                st.info(f"**🥈 {pos_2['Atleta']}**")
+                st.markdown(f"<h2 style='text-align: center; color: silver;'>{int(pos_2['Platas'])} Platas</h2>", unsafe_allow_html=True)
+                st.metric("Total Medallas", f"{int(pos_2['Oros']) + int(pos_2['Platas']) + int(pos_2['Bronces'])}")
+            else:
+                 st.info("🥈 ---")
+
+        # POSICIÓN 1 (Oro)
+        with col1:
+            if pos_1 is not None:
+                st.success(f"**🥇 {pos_1['Atleta']}**")
+                st.markdown(f"<h1 style='text-align: center; color: gold;'>{int(pos_1['Oros'])} Oros</h1>", unsafe_allow_html=True)
+                st.metric("Total Medallas", f"{int(pos_1['Oros']) + int(pos_1['Platas']) + int(pos_1['Bronces'])}")
+            else:
+                 st.success("🥇 ---")
+
+        # POSICIÓN 3 (Bronce)
+        with col3:
+            st.markdown("<br><br><br>", unsafe_allow_html=True) 
+            if pos_3 is not None:
+                st.error(f"**🥉 {pos_3['Atleta']}**") 
+                st.markdown(f"<h3 style='text-align: center; color: brown;'>{int(pos_3['Bronces'])} Bronces</h3>", unsafe_allow_html=True)
+                st.metric("Total Medallas", f"{int(pos_3['Oros']) + int(pos_3['Platas']) + int(pos_3['Bronces'])}")
+            else:
+                 st.error("🥉 ---")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- VISTA DE GESTIÓN (ENTRENADOR) ---
     if rol_actual == 'Entrenador':
+        st.markdown("---")
         st.subheader("Gestión de Ranking (Edición Directa)")
         st.warning("⚠️ **Edita los valores de medallas y categorías. La Posición se recalculará automáticamente al guardar.**")
         
@@ -1401,32 +1446,42 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Actual")
+        st.subheader("Clasificación Completa")
+    else:
+         st.subheader("Clasificación Completa")
 
-    st.dataframe(
-        df_ranking.drop(columns=['Puntos'], errors='ignore'), 
-        use_container_width=True,
-        column_config={
-            "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
-            "Oros": st.column_config.NumberColumn("🥇 Oros", format="%d"),
-            "Platas": st.column_config.NumberColumn("🥈 Platas", format="%d"),
-            "Bronces": st.column_config.NumberColumn("🥉 Bronces", format="%d"),
-        },
-        height=35 * (len(df_ranking) + 1)
-    )
 
-    current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
-    if not current_athlete_rank.empty:
-        rank_data = current_athlete_rank.iloc[0]
-        st.markdown("---")
-        st.subheader(f"Tu Posición Actual: {atleta_actual}")
+    # --- TABLA COMPLETA (Visible para todos) ---
+    if df_ranking.empty:
+        st.info("No hay datos de ranking para mostrar. El entrenador debe cargar el archivo.")
+    else:
+        cols_to_show = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
         
-        col_rank, col_medals = st.columns(2)
-        
-        col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
-        
-        medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
-        col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
+        st.dataframe(
+            df_ranking[cols_to_show],
+            use_container_width=True,
+            column_config={
+                "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
+                "Oros": st.column_config.NumberColumn("🥇 Oros", format="%d"),
+                "Platas": st.column_config.NumberColumn("🥈 Platas", format="%d"),
+                "Bronces": st.column_config.NumberColumn("🥉 Bronces", format="%d"),
+            },
+            height=35 * (len(df_ranking) + 1)
+        )
+
+        # Mostrar la posición del atleta actual de forma destacada
+        current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
+        if not current_athlete_rank.empty:
+            rank_data = current_athlete_rank.iloc[0]
+            st.markdown("---")
+            st.subheader(f"Tu Posición Actual: {atleta_actual}")
+            
+            col_rank, col_medals = st.columns(2)
+            
+            col_rank.metric("Rango", f"#{int(rank_data['Posicion'])}")
+            
+            medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
+            col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
 
 
 # --- FIN DEL CÓDIGO ---
