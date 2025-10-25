@@ -523,6 +523,24 @@ def highlight_imminent_events(df):
     
     return styles
 
+# --- FUNCIÓN CLAVE PARA EL RANKING AUTOMATIZADO ---
+def calculate_and_sort_ranking(df):
+    """Calcula los puntos y ordena el ranking por jerarquía de medallas (Oros > Platas > Bronces)."""
+    
+    for col in ['Oros', 'Platas', 'Bronces']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        
+    df['Puntos'] = (df['Oros'] * 10) + (df['Platas'] * 3) + (df['Bronces'] * 1)
+    
+    df_sorted = df.sort_values(
+        by=['Oros', 'Platas', 'Bronces', 'Puntos'], 
+        ascending=[False, False, False, False]
+    ).copy()
+    
+    df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
+    
+    return df_sorted
+
 # --- FUNCIÓN CLAVE PARA LA FC MAX (TANAKA) Y TMB (MIFFLIN) ---
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
@@ -900,7 +918,7 @@ with calc_tab:
         st.table(vbt_guide.set_index('% de 1RM Típico'))
         
 # ----------------------------------------------------------------------------------
-## PESTA 3: CALENDARIO (Visible para todos)
+## PESTAÑA 3: CALENDARIO (Visible para todos)
 # ----------------------------------------------------------------------------------
 with CALENDAR_TAB:
     st.header("📅 Calendario de Pruebas y Actividades")
@@ -962,83 +980,83 @@ with CALENDAR_TAB:
         st.info("No hay eventos habilitados para mostrar.")
 
 # ----------------------------------------------------------------------------------
-## PESTA 4: PERFIL (Visible para todos)
+## PESTAÑA 4: PERFIL (Visible para todos)
 # ----------------------------------------------------------------------------------
 with PERFIL_TAB:
     st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-    st.caption(f"Archivo de origen: **{PERFILES_FILE}**")
+    st.caption(f"Archivos de origen: Atletas y Perfiles")
 
-    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
+    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
+    
+    # Manejo si no existe el perfil (pero si existe el usuario)
+    if datos_perfil is None:
+        st.warning("No se encontró información de perfil (Altura, Edad, etc.) para el diagnóstico. Edita la hoja de Perfiles.")
+        datos_perfil = pd.Series({'Edad': np.nan, 'Altura_cm': np.nan, 'Sexo': 'Hombre'}) # Valores de relleno
 
-    if not datos_perfil.empty:
-        perfil = datos_perfil.iloc[0].drop('Atleta', errors='ignore')
-
-        st.subheader("Información Personal")
-        
-        cols = st.columns(2)
-        
-        for i, (key, value) in enumerate(perfil.items()):
-            if key.lower() == 'fecha_nacimiento' and pd.notna(value):
-                value_display = value.strftime('%Y-%m-%d') if isinstance(value, pd.Timestamp) else str(value)
-            else:
-                value_display = str(value)
-                
-            with cols[i % 2]:
-                st.metric(label=key.replace('_', ' ').title(), value=value_display)
-
-        st.markdown("---")
-        st.subheader("Diagnóstico de Fuerza Relativa y Balance")
-        
-        # Extracción de RM y Peso Corporal (con manejo de NaNs)
-        peso_kg = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0].get('PesoCorporal', 0)
-        sentadilla_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0].get('Sentadilla_RM', 0)
-        pressbanca_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0].get('PressBanca_RM', 0)
-        altura_cm = datos_perfil.iloc[0].get('Altura_cm', 0)
-        
-        # Conversión a flotante seguro
-        peso_kg = float(peso_kg) if pd.notna(peso_kg) else 0
-        sentadilla_rm = float(sentadilla_rm) if pd.notna(sentadilla_rm) else 0
-        pressbanca_rm = float(pressbanca_rm) if pd.notna(pressbanca_rm) else 0
-        altura_cm = float(altura_cm) if pd.notna(altura_cm) else 0
-        
-        
-        # Cálculo de IMC
-        if peso_kg > 0 and altura_cm > 0:
-            altura_m = altura_cm / 100
-            imc = peso_kg / (altura_m ** 2)
+    # Extracción de RM y Peso Corporal (con manejo de NaNs)
+    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
+    
+    # --- MÓDULO 1: INFORMACIÓN PERSONAL ---
+    st.subheader("Información Personal")
+    
+    col_personal_1, col_personal_2 = st.columns(2)
+    
+    # Mostrar datos del perfil
+    for i, (key, value) in enumerate(datos_perfil.drop(labels=['Atleta', 'Sexo'], errors='ignore').items()):
+        if key.lower() == 'fecha_nacimiento' and pd.notna(value):
+            value_display = value.strftime('%Y-%m-%d') if isinstance(value, pd.Timestamp) else str(value)
         else:
-            imc = 0
+            value_display = str(value) if pd.notna(value) else 'N/D'
+            
+        with col_personal_1 if i % 2 == 0 else col_personal_2:
+            st.metric(label=key.replace('_', ' ').title(), value=value_display)
+            
+    st.markdown("---")
+    st.subheader("Diagnóstico de Fuerza Relativa y Composición Corporal")
+    
+    # Extracción de valores seguros
+    peso_kg = float(datos_rm.get('PesoCorporal', 0)) if datos_rm is not None and pd.notna(datos_rm.get('PesoCorporal')) else 0
+    sentadilla_rm = float(datos_rm.get('Sentadilla_RM', 0)) if datos_rm is not None and pd.notna(datos_rm.get('Sentadilla_RM')) else 0
+    pressbanca_rm = float(datos_rm.get('PressBanca_RM', 0)) if datos_rm is not None and pd.notna(datos_rm.get('PressBanca_RM')) else 0
+    altura_cm = float(datos_perfil.get('Altura_cm', 0)) if pd.notna(datos_perfil.get('Altura_cm')) else 0
+    
+    # Cálculo de IMC
+    if peso_kg > 0 and altura_cm > 0:
+        altura_m = altura_cm / 100
+        imc = peso_kg / (altura_m ** 2)
+        imc_display = f"{imc:.1f}"
+    else:
+        imc = 0
+        imc_display = "N/D"
 
-        # Cálculo de Fuerza Relativa
-        rel_squat = round(sentadilla_rm / peso_kg, 2) if peso_kg > 0 else 0
-        rel_bench = round(pressbanca_rm / peso_kg, 2) if peso_kg > 0 else 0
-        
-        # Cálculo de Ratio de Balance (Ideal ~1.5:1 a 2:1)
-        ratio_sq_bp = round(sentadilla_rm / pressbanca_rm, 2) if pressbanca_rm > 0 else 0
+    # Cálculo de Fuerza Relativa y Ratio
+    rel_squat = round(sentadilla_rm / peso_kg, 2) if peso_kg > 0 and sentadilla_rm > 0 else 0
+    rel_bench = round(pressbanca_rm / peso_kg, 2) if peso_kg > 0 and pressbanca_rm > 0 else 0
+    ratio_sq_bp = round(sentadilla_rm / pressbanca_rm, 2) if pressbanca_rm > 0 and sentadilla_rm > 0 else 0
 
-        col_metric_1, col_metric_2, col_metric_3 = st.columns(3)
-        
-        col_metric_1.metric("IMC (Índice de Masa Corporal)", f"{imc:.1f}", 
-                            help="Peso (kg) / Altura (m)²")
-        col_metric_2.metric("Fuerza Relativa (Sentadilla)", f"{rel_squat:.2f}x BW", 
-                            help="RM de Sentadilla / Peso Corporal. Ideal > 1.5x.")
-        col_metric_3.metric("Ratio Squat:Bench", f"{ratio_sq_bp:.2f}:1", 
-                            help="Relación Sentadilla a Press Banca. Ideal ~1.5:1 para balance.")
+    col_metric_1, col_metric_2, col_metric_3 = st.columns(3)
+    
+    col_metric_1.metric("IMC (Índice de Masa Corporal)", imc_display, help="Peso (kg) / Altura (m)²")
+    col_metric_2.metric("Fuerza Relativa (Squat)", f"{rel_squat:.2f}x BW", help="RM de Sentadilla / Peso Corporal. Ideal > 1.5x.")
+    col_metric_3.metric("Ratio Squat:Bench", f"{ratio_sq_bp:.2f}:1", help="Relación Sentadilla a Press Banca. Ideal ~1.5:1 para balance.")
 
-        st.markdown("---")
-        st.subheader("Balance Muscular")
-        
+    st.markdown("---")
+    st.subheader("Análisis de Desequilibrio")
+    
+    if ratio_sq_bp > 0:
         if ratio_sq_bp > 2.2:
-            st.warning("El ratio Squat:Bench es alto. Considera fortalecer el Press Banca (Push) o reducir el desequilibrio.")
+            st.warning("⚠️ **Desequilibrio Notable:** El Press Banca es muy bajo en relación con la Sentadilla. Priorizar el empuje del tren superior.")
         elif ratio_sq_bp < 1.3:
-             st.warning("El ratio Squat:Bench es bajo. Considera fortalecer Sentadilla (Pull) o evaluar técnica. Podría indicar desequilibrio.")
+             st.warning("⚠️ **Desequilibrio Notable:** La Sentadilla es muy baja en relación con el Press Banca. Priorizar la cadena posterior y el core.")
         else:
-            st.success("Ratio Squat:Bench dentro del rango óptimo para balance general.")
+            st.success("✅ **Balance Óptimo:** Ratio Squat:Bench dentro del rango ideal (1.3:1 a 2.2:1).")
+    else:
+         st.info("Falta el registro de RM de Sentadilla o Press Banca para calcular el balance.")
 
 
     if rol_actual == 'Entrenador':
         st.markdown("---")
-        st.subheader("Gestión de Perfiles (Vista Entrenador)")
+        st.subheader("Datos Crudos de Perfiles (Vista Entrenador)")
         st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
         st.dataframe(df_perfiles, use_container_width=True)
 
@@ -1070,6 +1088,7 @@ with ACOND_TAB:
             st.markdown("---")
             st.subheader("Zonas de Entrenamiento Basadas en FC Máx")
             
+            # Zonas de FC estándar
             zonas = {
                 "Zona 1 (50%-60%)": f"{round(fc_max_estimada * 0.50)} - {round(fc_max_estimada * 0.60)} ppm",
                 "Zona 2 (60%-70%)": f"{round(fc_max_estimada * 0.60)} - {round(fc_max_estimada * 0.70)} ppm",
@@ -1252,7 +1271,7 @@ with GESTION_PESO_TAB:
         st.caption("Ajustar este valor al alza en días de entrenamiento intenso o calor.")
         
     else:
-        st.warning("Ingresa tu Peso, Altura y Edad para calcular tus métricas nutricionales.")
+        st.warning("Ingresa tu Peso, Altura y Edad en tu Perfil para calcular tus métricas nutricionales.")
 
 
 # ----------------------------------------------------------------------------------
@@ -1280,8 +1299,8 @@ with RECUPERACION_TAB:
     with col_ready:
         disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=4, help="1=Baja, 5=Alta", key='session_disposicion')
         
-    # Cálculo de la Puntuación Media
-    score = (sueno + (5 - molestias) + disposicion) / 3 # (5 - Molestias) invierte la escala
+    # Cálculo de la Puntuación Media: (Sueño + (5 - Molestias) + Disposición) / 3
+    score = (sueno + (5 - molestias) + disposicion) / 3 
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1290,15 +1309,16 @@ with RECUPERACION_TAB:
         st.markdown("**Recomendación:** Estás en estado óptimo. Sigue tu programación con intensidad.", unsafe_allow_html=True)
     elif score >= 3.0:
         st.warning(f"🟡 **SCORE SRD: {score:.1f}** (Adecuado)")
-        st.markdown("**Recomendación:** Estado adecuado. Procede, pero considera reducir el volumen si sientes fatiga.", unsafe_allow_html=True)
+        st.markdown("**Recomendación:** Estado adecuado. Procede, pero respeta estrictamente los RIR/RPE y reduce el volumen si sientes fatiga.", unsafe_allow_html=True)
     else:
         st.error(f"🔴 **SCORE SRD: {score:.1f}** (Bajo)")
-        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Reduce la carga ($\text{RPE}$ bajo o entrenamiento técnico/ligero).", unsafe_allow_html=True)
+        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Reduce la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
 
     st.markdown("---")
     
     # --- MÓDULO 2: PROTOCOLOS DE GUÍA (Información estática) ---
     st.subheader("2. Protocolos de Recuperación y Guía de Sueño")
+    st.caption("Guías de referencia para mejorar tu estado actual.")
     
     col_crio, col_termo = st.columns(2)
     
@@ -1306,16 +1326,15 @@ with RECUPERACION_TAB:
         st.error("Protocolo de Baño de Hielo (Crioterapia)")
         st.markdown("""
         - **Objetivo:** Reducción de la inflamación muscular.
-        - **Temperatura:** $10 \text{ °C}$ - $15 \text{ °C}$
-        - **Duración:** **$10 \text{ minutos}$** (Máx $15 \text{ min}$).
+        - **Temperatura:** 10 °C - 15 °C
+        - **Duración:** **10 minutos** (Máx 15 min).
         """)
         
     with col_termo:
-        st.info("Pautas de Sueño Óptimo")
+        st.warning("Protocolo de Sueño Óptimo")
         st.markdown("""
-        - **Duración Ideal:** **$8 \text{ - } 10 \text{ horas}$** por noche.
-        - **Ambiente:** Oscuro, fresco y silencioso.
-        - **Regla Digital:** Evitar pantallas $30 \text{ minutos}$ antes de dormir.
+        - **Duración Ideal:** **8 - 10 horas** por noche.
+        - **Consejo:** Evitar pantallas 30 minutos antes de dormir.
         """)
 
     st.markdown("---")
@@ -1323,8 +1342,8 @@ with RECUPERACION_TAB:
     st.caption("Movilidad diaria para prevenir lesiones en áreas clave de combate.")
     
     st.success("""
-    - **Antes de Entrenar:** Movilidad Dinámica (rotaciones, balanceos).
-    - **Después/Descanso:** Movilidad Estática/Estiramiento (mantener la posición).
+    - **Movilidad Dinámica:** Realizar antes de cada entrenamiento para preparar las articulaciones. (Ej: Rotaciones de hombros, balanceos de piernas).
+    - **Movilidad Estática:** Realizar *solo* después del entrenamiento o en días de descanso activo.
     - **Foco Principal:** **Caderas** (Flexores y Rotadores) y **Columna Torácica** (Rotación).
     """)
 
