@@ -1427,7 +1427,9 @@ with RANKING_TAB:
                 st.error("❌ No se pudieron guardar los cambios en el ranking.")
         
         st.markdown("---")
-        st.subheader("Clasificación Actual")
+        st.subheader("Clasificación Completa")
+    else:
+        st.subheader("Clasificación Completa")
 
     # --- TABLA COMPLETA (Visible para todos) ---
     if df_ranking.empty:
