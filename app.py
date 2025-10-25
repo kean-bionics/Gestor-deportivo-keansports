@@ -1376,7 +1376,7 @@ with RANKING_TAB:
             st.markdown("<br><br>", unsafe_allow_html=True) 
             if pos_2 is not None:
                 st.info(f"**🥈 {pos_2['Atleta']}**")
-                st.markdown(f"<h2 style='text-align: center; color: silver;'>{int(pos_2['Oros']) + int(pos_2['Platas']) + int(pos_2['Bronces'])} Medallas</h2>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='text-align: center; color: silver;'>2do Puesto</h2>", unsafe_allow_html=True) # Actualizado
                 
             else:
                  st.info("🥈 ---")
@@ -1385,7 +1385,7 @@ with RANKING_TAB:
         with col1:
             if pos_1 is not None:
                 st.success(f"**🥇 {pos_1['Atleta']}**")
-                st.markdown(f"<h1 style='text-align: center; color: gold;'>{int(pos_1['Oros']) + int(pos_1['Platas']) + int(pos_1['Bronces'])} Medallas</h1>", unsafe_allow_html=True)
+                st.markdown(f"<h1 style='text-align: center; color: gold;'>1er Puesto</h1>", unsafe_allow_html=True) # Actualizado
             else:
                  st.success("🥇 ---")
 
@@ -1394,7 +1394,7 @@ with RANKING_TAB:
             st.markdown("<br><br><br>", unsafe_allow_html=True) 
             if pos_3 is not None:
                 st.error(f"**🥉 {pos_3['Atleta']}**") 
-                st.markdown(f"<h3 style='text-align: center; color: brown;'>{int(pos_3['Oros']) + int(pos_3['Platas']) + int(pos_3['Bronces'])} Medallas</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='text-align: center; color: brown;'>3er Puesto</h3>", unsafe_allow_html=True) # Actualizado
             else:
                  st.error("🥉 ---")
         
