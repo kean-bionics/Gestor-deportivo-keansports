@@ -621,7 +621,7 @@ if not st.session_state['logged_in']:
 # --- CONTENIDO DE LA APLICACIÓN (POST-LOGIN) ---
 # ----------------------------------------------------------------------
 
-st.title("💪 RM & Rendimiento Manager")
+st.title("💪 GESTOR DEPORTIVO - HAPKIDO BETA V1.0")
 logout() 
 
 if st.session_state['logged_in']:
