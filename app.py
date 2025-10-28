@@ -1034,52 +1034,22 @@ with PRUEBAS_TAB:
     st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**. El Entrenador edita y carga todos los resultados.")
 
     if rol_actual == 'Entrenador':
-        st.subheader("Gestión de Resultados (Vista Entrenador)")
-        st.warning("⚠️ **ATENCIÓN**: El Entrenador puede ver, editar y añadir todos los resultados. Asegúrate de que las columnas de pruebas coincidan con el Excel que cargues, si añades más.")
+        st.subheader("Visualización de Resultados (Solo Carga Excel)")
+        st.info("ℹ️ **INFO**: Para evitar errores de compatibilidad, la edición de esta tabla se realiza directamente en el archivo **test_results.xlsx** y luego se recarga la aplicación. No es editable desde aquí.")
         
-        df_editor_tests = df_test_results_full.copy()
+        df_display = df_test_results_full.sort_values(by=['Atleta', 'Fecha'], ascending=[True, False]).copy()
         
-        # Configuración de columnas base para el editor
-        test_col_config = {
-            "ID": st.column_config.NumberColumn("ID", disabled=True),
-            "Atleta": st.column_config.TextColumn("Atleta", help="Nombre del atleta (Debe coincidir con el login)", required=True),
-            "Fecha": st.column_config.DateColumn("Fecha de Prueba", required=True),
-            "100m (s)": st.column_config.NumberColumn("100m (segundos)", format="%.2f", step=0.01),
-            "400m (s)": st.column_config.NumberColumn("400m (segundos)", format="%.1f", step=0.1),
-            "5k (min)": st.column_config.NumberColumn("5k (minutos)", format="%.1f", step=0.1),
-            "10km (min)": st.column_config.NumberColumn("10km (minutos)", format="%.1f", step=0.1),
-            # FIX: Quitamos el formato para evitar el error con NaNs/float.
-            "Course Navette (max)": st.column_config.NumberColumn("Course Navette (nivel)", step=1),
-            "Salto Largo (cm)": st.column_config.NumberColumn("Salto Largo (cm)", step=1),
-            "Salto Alto (cm)": st.column_config.NumberColumn("Salto Alto (cm)", step=1),
-            "Dinamometria Izq (kg)": st.column_config.NumberColumn("Dinamo Izq (kg)", step=1),
-            "Dinamometria Der (kg)": st.column_config.NumberColumn("Dinamo Der (kg)", step=1),
-        }
-        
-        # Combinar columnas base con las columnas que realmente existen en el DF cargado
-        # Esto permite que el usuario añada columnas en el Excel manualmente y que sigan saliendo
-        editor_columns = {}
-        for col in df_editor_tests.columns:
-            editor_columns[col] = test_col_config.get(col, st.column_config.TextColumn(col)) # Si no existe en la config, usa TextColumn por defecto
-        
-        df_edited_tests = st.data_editor(
-            df_editor_tests,
-            num_rows="dynamic",
-            column_config=editor_columns,
+        # Eliminamos el st.data_editor y lo reemplazamos por st.dataframe
+        # También eliminamos el botón de guardar
+
+        st.dataframe(
+            df_display.drop(columns=['ID'], errors='ignore'),
             use_container_width=True,
-            key="test_results_data_editor"
+            hide_index=True
         )
-        
-        if st.button("💾 Guardar Resultados de Pruebas y Aplicar", type="primary", key="save_test_results_btn"):
-            if save_test_results_data(df_edited_tests):
-                st.success("✅ Resultados de Pruebas actualizados y guardados con éxito. Recargando aplicación...")
-                st.rerun()
-            else:
-                st.error("❌ No se pudieron guardar los datos de pruebas.")
                 
         st.markdown("---")
         st.subheader("Vista Completa (Todos los Atletas)")
-        df_display = df_test_results_full.sort_values(by=['Atleta', 'Fecha'], ascending=[True, False]).copy()
         
     else: # Vista Atleta
         st.subheader(f"Tus Resultados de Pruebas Físicas Históricas, {atleta_actual}")
