@@ -333,12 +333,25 @@ def load_test_results_data():
         status_message += " Archivo creado con éxito."
         
     # Conversión de tipos de datos para columnas conocidas
+    
+    # 1. Handle Date column
     if 'Fecha' in df.columns:
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce').dt.date
 
-    # Asegurar ID como entero
+    # 2. Handle ID (must be numeric for exclusion in editor config)
     df['ID'] = pd.to_numeric(df['ID'], errors='coerce').fillna(0).astype(int)
-        
+
+    # 3. Handle Numeric columns (FIX: Explicitly convert all known numeric columns to float)
+    numeric_cols = [
+        '100m (s)', '400m (s)', '5k (min)', '10km (min)', 'Course Navette (max)', 
+        'Salto Largo (cm)', 'Salto Alto (cm)', 'Dinamometria Izq (kg)', 'Dinamometria Der (kg)'
+    ]
+    
+    for col in numeric_cols:
+        if col in df.columns:
+            # Coerce to float, which handles NaN (empty cells) correctly for Streamlit NumberColumn
+            df[col] = pd.to_numeric(df[col], errors='coerce').astype(float) 
+            
     return df, status_message
 
 
