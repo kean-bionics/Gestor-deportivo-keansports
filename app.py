@@ -1048,11 +1048,12 @@ with PRUEBAS_TAB:
             "400m (s)": st.column_config.NumberColumn("400m (segundos)", format="%.1f", step=0.1),
             "5k (min)": st.column_config.NumberColumn("5k (minutos)", format="%.1f", step=0.1),
             "10km (min)": st.column_config.NumberColumn("10km (minutos)", format="%.1f", step=0.1),
-            "Course Navette (max)": st.column_config.NumberColumn("Course Navette (nivel)", format="%d", step=1),
-            "Salto Largo (cm)": st.column_config.NumberColumn("Salto Largo (cm)", format="%d", step=1),
-            "Salto Alto (cm)": st.column_config.NumberColumn("Salto Alto (cm)", format="%d", step=1),
-            "Dinamometria Izq (kg)": st.column_config.NumberColumn("Dinamo Izq (kg)", format="%d", step=1),
-            "Dinamometria Der (kg)": st.column_config.NumberColumn("Dinamo Der (kg)", format="%d", step=1),
+            # FIX: Cambiamos el formato de %d a %.0f para resolver la incompatibilidad de tipos con NaN/float.
+            "Course Navette (max)": st.column_config.NumberColumn("Course Navette (nivel)", format="%.0f", step=1),
+            "Salto Largo (cm)": st.column_config.NumberColumn("Salto Largo (cm)", format="%.0f", step=1),
+            "Salto Alto (cm)": st.column_config.NumberColumn("Salto Alto (cm)", format="%.0f", step=1),
+            "Dinamometria Izq (kg)": st.column_config.NumberColumn("Dinamo Izq (kg)", format="%.0f", step=1),
+            "Dinamometria Der (kg)": st.column_config.NumberColumn("Dinamo Der (kg)", format="%.0f", step=1),
         }
         
         # Combinar columnas base con las columnas que realmente existen en el DF cargado
