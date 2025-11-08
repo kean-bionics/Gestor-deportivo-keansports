@@ -11,7 +11,7 @@ from typing import Tuple, Dict, Any
 
 # --- 1. CONFIGURACIÓN INICIAL Y METADATOS ---
 
-# RUTA DEL LOGO
+# RUTA DEL LOGO (Sigue usando el archivo local)
 LOGO_PATH = 'logo.png' 
 
 # Nombres de las tablas en PostgreSQL (Estos reemplazan los nombres de archivo .xlsx)
@@ -43,15 +43,11 @@ TEST_RESULTS_REQUIRED_COLUMNS = [
 DB_USER = os.environ.get("DB_USER")
 DB_PASSWORD = os.environ.get("DB_PASSWORD")
 DB_NAME = os.environ.get("DB_NAME")
-# DB_PORT = os.environ.get("DB_PORT", "5432") # El puerto es gestionado por el socket
 INSTANCE_CONNECTION_NAME = os.environ.get("INSTANCE_CONNECTION_NAME")
 
 @st.cache_resource
 def get_db_engine():
-    """
-    Crea y cachea el motor de conexión a PostgreSQL usando el socket de Cloud SQL.
-    Utiliza las variables de entorno de Cloud Run.
-    """
+    """Crea y cachea el motor de conexión a PostgreSQL usando el socket de Cloud SQL."""
     if not all([DB_USER, DB_PASSWORD, DB_NAME, INSTANCE_CONNECTION_NAME]):
         st.error("ERROR DB: Faltan variables de entorno (DB_USER, etc.) o la instancia no está vinculada.")
         return None
@@ -95,7 +91,6 @@ def create_initial_template(table_name):
             'Email': ['tu@mail.com', 'juan@mail.com', 'ana@mail.com']
         })
     
-    # [Resto de las plantillas de ejemplo]
     elif table_name == TABLES['calendario']:
         return pd.DataFrame({
             'Evento': ['Prueba RM', 'Evaluación Resistencia'],
@@ -146,6 +141,7 @@ def init_db_tables(engine):
                 if not pd.io.sql.table_exists(conn, table_name):
                     df_template = create_initial_template(table_name)
                     if not df_template.empty:
+                        # Creamos la tabla y la llenamos con datos de ejemplo
                         df_template.to_sql(table_name, conn, if_exists='replace', index=False)
                         st.toast(f"Tabla '{table_name}' creada con éxito en SQL.", icon="📝")
                     
@@ -165,7 +161,8 @@ def load_table(table_name, required_cols=[]):
         try:
             return pd.read_sql_table(table_name, DB_ENGINE)
         except ValueError:
-            return pd.DataFrame(columns=required_cols) # Tabla no encontrada
+            # Esto ocurre si la tabla existe pero está vacía o el esquema no coincide inicialmente
+            return pd.DataFrame(columns=required_cols)
         except Exception as e:
             st.error(f"Error de lectura SQL en {table_name}: {e}")
             return pd.DataFrame(columns=required_cols)
@@ -181,7 +178,6 @@ def save_table(df_edited, table_name, clear_cache_func):
 
     try:
         # 1. Escribir en la DB: Usa 'replace' para sobrescribir toda la tabla.
-        # Esto reemplaza al guardado de Excel (df.to_excel).
         df_edited.to_sql(table_name, DB_ENGINE, if_exists='replace', index=False)
 
         # 2. Forzar la limpieza de caché para que Streamlit se actualice
@@ -192,9 +188,9 @@ def save_table(df_edited, table_name, clear_cache_func):
         st.error(f"Error al guardar datos en la tabla '{table_name}': {e}")
         return False
 
-# --- 5. REEMPLAZO DE FUNCIONES DE EXCEL POR SQL ---
+# --- 5. REEMPLAZO DE FUNCIONES DE EXCEL POR SQL (CARGA) ---
 
-# A. Funciones de Carga (Reemplazan load_..._data())
+# Reemplazo de load_data()
 def load_atletas():
     df, status = load_table(TABLES['atletas'], REQUIRED_COLUMNS)
     if 'Última_Fecha' in df.columns:
@@ -209,8 +205,15 @@ def load_calendar_data():
          df['Habilitado'] = df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
     return df, status
 
+# Reemplazo de load_tests_data() con CORRECCIÓN de Visible
 def load_tests_data():
     df, status = load_table(TABLES['pruebas'])
+    
+    # --- CORRECCIÓN CLAVE ---
+    if 'Visible' not in df.columns:
+        df['Visible'] = 'Sí'
+    # -------------------------
+    
     df['Visible'] = df['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     return df, status
 
@@ -242,7 +245,8 @@ def load_test_results_data():
 
     return df, status
 
-# B. Funciones de Guardado (Reemplazan save_..._data())
+# --- 6. REEMPLAZO DE FUNCIONES DE EXCEL POR SQL (GUARDADO) ---
+
 def save_main_data(df_edited):
     try:
         df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
@@ -297,7 +301,8 @@ def save_tests_data(df_edited):
 
 # [FALTA save_readiness_data y save_perfiles_data (usando save_table)]
 
-# --- FUNCIONES DE CÁLCULO (Se mantienen) ---
+
+# --- 7. FUNCIONES DE CÁLCULO (Se mantienen) ---
 
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
@@ -321,14 +326,13 @@ def calculate_and_sort_ranking(df):
     df_sorted['Posicion'] = np.arange(1, len(df_sorted) + 1)
     return df_sorted
 
-# --- LLAMADA INICIAL Y CREACIÓN DE TABLAS (POST-MIGRACIÓN) ---
+# --- 8. LLAMADA INICIAL Y CREACIÓN DE TABLAS ---
 
-# Inicializar las tablas al inicio (usando el motor global)
+# Inicializar las tablas al inicio
 if DB_ENGINE:
     init_db_tables(DB_ENGINE)
 
-# Cargar los datos desde SQL (estas reemplazan todas las cargas de Excel)
-# Nota: La primera vez que corra, esto cargará los datos de plantilla que creaste.
+# Cargar los datos desde SQL
 df_atletas, initial_status = load_atletas()
 df_calendario_full, _ = load_calendar_data() 
 df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
@@ -339,11 +343,7 @@ df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
 df_test_results_full, test_results_status = load_test_results_data()
 
-# [El resto del código de la aplicación de Streamlit (Sección 4 en adelante, incluyendo login, pestañas y lógica de interfaz) se pega aquí, INTACTO, usando los DataFrames cargados arriba (df_atletas, df_test_results_full, etc.)]
-# ... [PEGAR AQUÍ EL RESTO DE TU CÓDIGO (Desde la línea 406 en adelante de tu app.py original)] ...
-
-# --- CÓDIGO RESTANTE DE LA APLICACIÓN (PESTAÑAS) ---
-# [Se mantiene el código de las pestañas, login_form, logout, y funciones auxiliares que no usan directamente Excel]
+# [El resto del código de la aplicación de Streamlit (Sección 4 en adelante, incluyendo login, pestañas y lógica de interfaz) se mantiene]
 
 # Muestra mensajes de estado críticos (CREACIÓN o ERROR)
 if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
