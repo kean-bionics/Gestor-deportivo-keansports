@@ -1033,43 +1033,96 @@ with PRUEBAS_TAB:
     st.header("🏋️ Historial y Gestión de Pruebas Físicas")
     st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**. El Entrenador edita y carga todos los resultados.")
 
+    # Identificar columnas numéricas que representan las pruebas
+    test_columns = [col for col in df_test_results_full.columns if col not in ['ID', 'Atleta', 'Fecha']]
+    
     if rol_actual == 'Entrenador':
         st.subheader("Visualización de Resultados (Solo Carga Excel)")
-        st.info("ℹ️ **INFO**: Para evitar errores de compatibilidad, la edición de esta tabla se realiza directamente en el archivo **test_results.xlsx** y luego se recarga la aplicación. No es editable desde aquí.")
+        st.info("ℹ️ **INFO**: La edición de esta tabla se realiza directamente en el archivo **test_results.xlsx** y luego se recarga la aplicación. No es editable desde aquí.")
         
         df_display = df_test_results_full.sort_values(by=['Atleta', 'Fecha'], ascending=[True, False]).copy()
         
-        # Eliminamos el st.data_editor y lo reemplazamos por st.dataframe
-        # También eliminamos el botón de guardar
-
+        # Muestra la tabla completa
         st.dataframe(
             df_display.drop(columns=['ID'], errors='ignore'),
             use_container_width=True,
             hide_index=True
         )
-                
+        
         st.markdown("---")
-        st.subheader("Vista Completa (Todos los Atletas)")
+        st.subheader("Análisis de Tendencia (Todos los Atletas)")
+        
+        selected_athlete = st.selectbox("Seleccionar Atleta para Análisis de Tendencia:", df_test_results_full['Atleta'].unique(), key='trend_athlete_select_coach')
+        
+        # Lógica de tendencia para el entrenador (misma que el atleta, pero seleccionando el nombre)
+        df_filtered_trend = df_test_results_full[df_test_results_full['Atleta'] == selected_athlete].sort_values(by='Fecha').set_index('Fecha').copy()
         
     else: # Vista Atleta
         st.subheader(f"Tus Resultados de Pruebas Físicas Históricas, {atleta_actual}")
         
-        df_filtered = df_test_results_full[df_test_results_full['Atleta'] == atleta_actual].copy()
-        df_display = df_filtered.sort_values(by='Fecha', ascending=False)
+        df_filtered_trend = df_test_results_full[df_test_results_full['Atleta'] == atleta_actual].sort_values(by='Fecha').set_index('Fecha').copy()
+        df_display = df_filtered_trend.copy().reset_index().sort_values(by='Fecha', ascending=False)
         
         if df_display.empty:
             st.info(f"No hay resultados de pruebas registrados para {atleta_actual} aún.")
+            
+        # Muestra la tabla (para el atleta)
+        if not df_display.empty:
+            cols_to_display = [col for col in df_display.columns if col != 'ID']
+            st.dataframe(df_display[cols_to_display], use_container_width=True, hide_index=True)
 
-    if not df_display.empty:
-        # Excluir la columna ID para la visualización final si no es entrenador
-        cols_to_display = [col for col in df_display.columns if col != 'ID']
+        st.markdown("---")
+        st.subheader("Análisis de Tendencia Individual")
         
-        # Muestra la tabla (filtrada o completa)
-        st.dataframe(
-            df_display[cols_to_display],
-            use_container_width=True,
-            hide_index=True
+    # --- MÓDULO DE GRÁFICOS DE TENDENCIA (Visto por Entrenador y Atleta) ---
+    
+    if not df_filtered_trend.empty and test_columns:
+        
+        # Selector para la prueba a graficar (solo columnas de pruebas)
+        chart_test = st.selectbox(
+            "Selecciona la Prueba a Graficar (Evolución Histórica):",
+            test_columns,
+            key='test_chart_select'
         )
+        
+        # Mostrar solo las columnas de interés para el gráfico
+        df_chart = df_filtered_trend[[chart_test]].dropna()
+        
+        if not df_chart.empty:
+            st.line_chart(df_chart)
+            
+            # Métrica de Mejora/Empeoramiento
+            if len(df_chart) > 1:
+                start_value = df_chart.iloc[0][chart_test]
+                end_value = df_chart.iloc[-1][chart_test]
+                diff = end_value - start_value
+                
+                # Para carreras (tiempo), un valor negativo es MEJORA. Para saltos/fuerza, un valor positivo es MEJORA.
+                is_time_metric = '(s)' in chart_test or '(min)' in chart_test
+                
+                if (diff < 0 and is_time_metric) or (diff > 0 and not is_time_metric):
+                    trend_icon = "📈"
+                    trend_text = "¡Progreso! Ha mejorado su marca histórica."
+                elif (diff > 0 and is_time_metric) or (diff < 0 and not is_time_metric):
+                    trend_icon = "📉"
+                    trend_text = "Empeoramiento. Revisar el entrenamiento."
+                else:
+                    trend_icon = "⚪"
+                    trend_text = "Sin cambios notables."
+                    
+                st.metric(
+                    f"Tendencia General ({chart_test})",
+                    f"{trend_icon} {trend_text}",
+                    delta=f"{diff:.2f} {chart_test.split('(')[0].strip()}"
+                )
+            else:
+                st.info("Se necesita más de un registro de fecha para mostrar la tendencia.")
+        else:
+            st.warning(f"No hay datos registrados para '{chart_test}' que se puedan graficar.")
+            
+    elif rol_actual == 'Entrenador':
+        st.info("Cargue datos en el archivo 'test_results.xlsx' para ver la tendencia.")
+
 
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 4: CALENDARIO (Visible para todos)
