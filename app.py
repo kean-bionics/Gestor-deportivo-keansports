@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, time
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS Y FUNCIONES DE CÁLCULO ---
 
 # Archivo 1: Atletas y Marcas RM
-EXCEL_FILE = 'atletas_data.xlsx' 
+EXCEL_FILE = 'atletas_data.xlsx'  
 REQUIRED_COLUMNS = ['ID', 'Atleta', 'Contraseña', 'Rol', 'Sentadilla_RM', 'PressBanca_RM', 'PesoCorporal', 'Última_Fecha']
 
 # Archivo 2: Calendario
@@ -512,7 +512,7 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
         if current_df.empty:
              current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
     except Exception:
-         current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
+          current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
 
     new_entry = {
         'Atleta': atleta, 
@@ -1031,23 +1031,46 @@ with calc_tab:
 # ----------------------------------------------------------------------------------
 with PRUEBAS_TAB:
     st.header("🏋️ Historial y Gestión de Pruebas Físicas")
-    st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**. El Entrenador edita y carga todos los resultados.")
+    st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**.")
 
     # Identificar columnas numéricas que representan las pruebas
     test_columns = [col for col in df_test_results_full.columns if col not in ['ID', 'Atleta', 'Fecha']]
     
     if rol_actual == 'Entrenador':
-        st.subheader("Visualización de Resultados (Solo Carga Excel)")
-        st.info("ℹ️ **INFO**: La edición de esta tabla se realiza directamente en el archivo **test_results.xlsx** y luego se recarga la aplicación. No es editable desde aquí.")
+        st.subheader("Gestión de Resultados Históricos (Edición Directa)")
+        st.warning("⚠️ **ATENCIÓN**: Puedes añadir nuevas filas y modificar resultados directamente. Las filas vacías se eliminarán al guardar.")
         
-        df_display = df_test_results_full.sort_values(by=['Atleta', 'Fecha'], ascending=[True, False]).copy()
+        df_editor_results = df_test_results_full.copy()
         
-        # Muestra la tabla completa
-        st.dataframe(
-            df_display.drop(columns=['ID'], errors='ignore'),
+        df_edited_results = st.data_editor(
+            df_editor_results, 
+            num_rows="dynamic",
+            column_config={
+                "ID": st.column_config.NumberColumn("ID", disabled=True), 
+                "Atleta": st.column_config.TextColumn("Atleta", help="Debe coincidir con el nombre de usuario de Atletas", required=True),
+                "Fecha": st.column_config.DateColumn("Fecha de Prueba", required=True),
+                # Configuración de las columnas numéricas como números flotantes (decimales)
+                "100m (s)": st.column_config.NumberColumn("100m (s)", format="%.2f", min_value=0.0),
+                "400m (s)": st.column_config.NumberColumn("400m (s)", format="%.2f", min_value=0.0),
+                "5k (min)": st.column_config.NumberColumn("5k (min)", format="%.1f", min_value=0.0),
+                "10km (min)": st.column_config.NumberColumn("10km (min)", format="%.1f", min_value=0.0),
+                "Course Navette (max)": st.column_config.NumberColumn("Course Navette (max)", format="%d", min_value=0),
+                "Salto Largo (cm)": st.column_config.NumberColumn("Salto Largo (cm)", format="%d", min_value=0),
+                "Salto Alto (cm)": st.column_config.NumberColumn("Salto Alto (cm)", format="%d", min_value=0),
+                "Dinamometria Izq (kg)": st.column_config.NumberColumn("Dinamometria Izq (kg)", format="%d", min_value=0),
+                "Dinamometria Der (kg)": st.column_config.NumberColumn("Dinamometria Der (kg)", format="%d", min_value=0),
+            },
             use_container_width=True,
-            hide_index=True
+            key="test_results_data_editor"
         )
+        
+        # 2. Botón de guardado
+        if st.button("💾 Guardar Resultados de Pruebas Físicas", type="primary", key="save_test_results_data_btn"):
+            if save_test_results_data(df_edited_results):
+                st.success("✅ Resultados de Pruebas Físicas actualizados y guardados con éxito. Recargando aplicación...")
+                st.rerun()
+            else:
+                st.error("❌ No se pudieron guardar los datos de pruebas.")
         
         st.markdown("---")
         st.subheader("Análisis de Tendencia (Todos los Atletas)")
@@ -1254,7 +1277,7 @@ with PERFIL_TAB:
         else:
             st.success("✅ **Balance Óptimo:** Ratio Squat:Bench dentro del rango ideal (1.3:1 a 2.2:1).")
     else:
-           st.info("Falta el registro de RM de Sentadilla o Press Banca para calcular el balance.")
+             st.info("Falta el registro de RM de Sentadilla o Press Banca para calcular el balance.")
 
 
     if rol_actual == 'Entrenador':
@@ -1389,7 +1412,7 @@ with GESTION_PESO_TAB:
     st.header("⚖️ Gestión de Peso y Nutrición")
     
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
-    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
+    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if datos_rm is not None and atleta_actual in df_atletas['Atleta'].values else None
 
     peso_kg = datos_rm.get('PesoCorporal', 0) if datos_rm is not None else 0
     altura_cm = datos_perfil.get('Altura_cm', 0) if datos_perfil is not None else 0
