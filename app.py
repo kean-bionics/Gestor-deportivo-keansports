@@ -511,6 +511,7 @@ def save_main_data(df_edited):
 
 def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     """Añade una nueva fila al archivo readiness_data.xlsx, actualiza el archivo y el DataFrame global."""
+    # NOTE: ESTA FUNCIÓN ESTÁ AQUÍ POR REFERENCIA, PERO SE REEMPLAZA CON GOOGLE FORMS EN LA PESTAÑA.
     
     try:
         current_df, _ = load_readiness_data()
@@ -618,7 +619,7 @@ def save_test_results_data(df_edited):
         
         # 2. Convertir la Fecha antes de guardar
         if 'Fecha' in df_cleaned.columns:
-            df_cleaned['Fecha'] = pd.to_datetime(df_cleaned['Fecha'], errors='coerce').dt.date
+            df_cleaned['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce').dt.date
             
         # 3. Guardar todas las columnas que existen en el DF editado
         df_to_save = df_cleaned.copy()
@@ -667,7 +668,35 @@ def highlight_imminent_events(df):
 # --- FIN DE FUNCIONES AUXILIARES ---
 
 
-# --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
+# --- 5. CARGA INICIAL DE DATAFRAMES ---
+
+df_atletas, initial_status = load_data() 
+df_calendario_full = load_calendar_data() 
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
+df_pruebas_full, tests_status = load_tests_data() 
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
+df_perfiles, perfil_status = load_perfil_data() 
+df_ranking, ranking_status = load_ranking_data()
+df_readiness, readiness_status = load_readiness_data()
+df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
+
+
+# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
+if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
+    st.toast(initial_status, icon="📝")
+if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
+    st.toast(tests_status, icon="🛠️")
+if perfil_status and ('creado' in perfil_status.lower() or 'error' in perfil_status.lower() or 'adver' in perfil_status.lower()):
+    st.toast(perfil_status, icon="👤")
+if ranking_status and ('creado' in ranking_status.lower() or 'error' in ranking_status.lower() or 'adver' in ranking_status.lower()):
+    st.toast(ranking_status, icon="🏆")
+if readiness_status and ('creado' in readiness_status.lower() or 'error' in readiness_status.lower() or 'adver' in readiness_status.lower()):
+    st.toast(readiness_status, icon="🧘")
+if test_results_status and ('creado' in test_results_status.lower() or 'error' in test_results_status.lower() or 'adver' in test_results_status.lower()):
+    st.toast(test_results_status, icon="🏃")
+
+
+# --- 6. INTERFAZ PRINCIPAL DE STREAMLIT ---
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
@@ -733,30 +762,33 @@ if st.session_state['logged_in']:
 rol_actual = st.session_state['rol']
 atleta_actual = st.session_state['atleta_nombre']
 
-# Definición de pestañas (PRUEBAS_TAB es la nueva)
+# === DEFINICIÓN DE PESTAÑAS (Fusión GESTIÓN PESO + NUEVA NUTRICIÓN) ===
+
 if rol_actual == 'Entrenador':
-    tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
+    tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
         "📊 Vista Entrenador (Datos)", 
         "🧮 Calculadora de Carga", 
-        "🏋️ Pruebas Físicas", # NUEVA PESTAÑA
+        "🏋️ Pruebas Físicas",
         "📅 Calendario", 
         "👤 Perfil", 
         "🏃 Acondicionamiento", 
-        "⚖️ Gestión de Peso",
+        "🍎 Nutrición", # NUEVA PESTAÑA UNIFICADA
         "🌡️ Recuperación",
         "🏆 Ranking"
     ])
 else:
-    tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, GESTION_PESO_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
+    tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
         "🧮 Calculadora de Carga", 
-        "🏋️ Pruebas Físicas", # NUEVA PESTAÑA
+        "🏋️ Pruebas Físicas",
         "📅 Calendario", 
         "👤 Perfil", 
         "🏃 Acondicionamiento", 
-        "⚖️ Gestión de Peso",
+        "🍎 Nutrición", # NUEVA PESTAÑA UNIFICADA
         "🌡️ Recuperación",
         "🏆 Ranking"
     ])
+
+# === FIN DEFINICIÓN DE PESTAÑAS ===
 
 # ----------------------------------------------------------------------------------
 ## NOTIFICACIÓN GLOBAL DE EVENTOS INMINENTES
@@ -1215,206 +1247,10 @@ with CALENDAR_TAB:
         st.info("No hay eventos habilitados para mostrar.")
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 5: PERFIL (Visible para todos)
+## PESTAÑA 7 (Ex-Gestión de Peso): NUTRICIÓN
 # ----------------------------------------------------------------------------------
-with PERFIL_TAB:
-    st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-    st.caption(f"Archivos de origen: Atletas y Perfiles")
-
-    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
-    datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_atletas['Atleta'].values else None
-    
-    if datos_perfil is None:
-        st.warning("No se encontró información de perfil (Altura, Edad, Sexo, etc.). Edita la hoja de Perfiles.")
-        datos_perfil = pd.Series({'Edad': np.nan, 'Altura_cm': np.nan, 'Sexo': 'Hombre'})
-    
-    # --- MÓDULO 1: INFORMACIÓN PERSONAL ---
-    st.subheader("Información Personal")
-    
-    col_personal_1, col_personal_2 = st.columns(2)
-    
-    for i, (key, value) in enumerate(datos_perfil.drop(labels=['Atleta', 'Sexo'], errors='ignore').items()):
-        if key.lower() == 'fecha_nacimiento' and pd.notna(value):
-            value_display = value.strftime('%Y-%m-%d') if isinstance(value, pd.Timestamp) else str(value)
-        else:
-            value_display = str(value) if pd.notna(value) else 'N/D'
-            
-        with col_personal_1 if i % 2 == 0 else col_personal_2:
-            st.metric(label=key.replace('_', ' ').title(), value=value_display)
-            
-    st.markdown("---")
-    st.subheader("Diagnóstico de Fuerza Relativa y Composición Corporal")
-    
-    # Extracción de valores seguros para cálculos
-    peso_kg = float(datos_rm.get('PesoCorporal', 0)) if datos_rm is not None and pd.notna(datos_rm.get('PesoCorporal')) else 0
-    sentadilla_rm = float(datos_rm.get('Sentadilla_RM', 0)) if datos_rm is not None and pd.notna(datos_rm.get('Sentadilla_RM')) else 0
-    pressbanca_rm = float(datos_rm.get('PressBanca_RM', 0)) if datos_rm is not None and pd.notna(datos_rm.get('PressBanca_RM')) else 0
-    altura_cm = float(datos_perfil.get('Altura_cm', 0)) if pd.notna(datos_perfil.get('Altura_cm')) else 0
-    
-    # Cálculo de IMC
-    if peso_kg > 0 and altura_cm > 0:
-        altura_m = altura_cm / 100
-        imc = peso_kg / (altura_m ** 2)
-        imc_display = f"{imc:.1f}"
-    else:
-        imc = 0
-        imc_display = "N/D"
-
-    # Cálculo de Fuerza Relativa
-    rel_squat = round(sentadilla_rm / peso_kg, 2) if peso_kg > 0 and sentadilla_rm > 0 else 0
-    rel_bench = round(pressbanca_rm / peso_kg, 2) if peso_kg > 0 and pressbanca_rm > 0 else 0
-    ratio_sq_bp = round(sentadilla_rm / pressbanca_rm, 2) if pressbanca_rm > 0 and sentadilla_rm > 0 else 0
-
-    col_metric_1, col_metric_2, col_metric_3 = st.columns(3)
-    
-    col_metric_1.metric("IMC (Índice de Masa Corporal)", imc_display, help="Peso (kg) / Altura (m)²")
-    col_metric_2.metric("Fuerza Relativa (Squat)", f"{rel_squat:.2f}x BW", help="RM de Sentadilla / Peso Corporal. Ideal > 1.5x.")
-    col_metric_3.metric("Ratio Squat:Bench", f"{ratio_sq_bp:.2f}:1", help="Relación Sentadilla a Press Banca. Ideal ~1.5:1 para balance.")
-
-    st.markdown("---")
-    st.subheader("Análisis de Desequilibrio")
-    
-    if ratio_sq_bp > 0:
-        if ratio_sq_bp > 2.2:
-            st.warning("⚠️ **Desequilibrio Notable:** El Press Banca es muy bajo en relación con la Sentadilla. Priorizar el empuje del tren superior.")
-        elif ratio_sq_bp < 1.3:
-             st.warning("⚠️ **Desequilibrio Notable:** La Sentadilla es muy baja en relación con el Press Banca. Priorizar la cadena posterior y el core.")
-        else:
-            st.success("✅ **Balance Óptimo:** Ratio Squat:Bench dentro del rango ideal (1.3:1 a 2.2:1).")
-    else:
-             st.info("Falta el registro de RM de Sentadilla o Press Banca para calcular el balance.")
-
-
-    if rol_actual == 'Entrenador':
-        st.markdown("---")
-        st.subheader("Gestión de Perfiles (Vista Entrenador)")
-        st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
-        st.dataframe(df_perfiles, use_container_width=True)
-
-
-# ----------------------------------------------------------------------------------
-## PESTAÑA 6: ACONDICIONAMIENTO
-# ----------------------------------------------------------------------------------
-with ACOND_TAB:
-    st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
-    
-    datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual]
-    
-    if not datos_perfil.empty:
-        datos_perfil = datos_perfil.iloc[0]
-        edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
-        
-        # Fórmula FC Máx: Tanaka (208 - 0.7 * edad)
-        fc_max_estimada = round(208 - (0.7 * edad)) if not pd.isna(edad) and edad > 0 else "N/D"
-
-        st.subheader("1. Frecuencia Cardíaca Máxima (FC Máx) y Zonas")
-        
-        col_edad, col_fc = st.columns([1, 1])
-        with col_edad:
-            st.metric("Edad Registrada (Aprox.)", f"{int(edad) if not pd.isna(edad) else 'N/D'} años")
-            
-        with col_fc:
-            st.metric("FC Máx Estimada", f"**{fc_max_estimada} ppm** (Fórmula de Tanaka)")
-
-        if not pd.isna(fc_max_estimada) and isinstance(fc_max_estimada, int):
-            st.markdown("---")
-            st.subheader("Visualización de Zonas de Entrenamiento")
-            
-            # --- LÓGICA DEL GRÁFICO (NUEVO) ---
-            
-            fc_max_int = int(fc_max_estimada)
-            
-            zonas_data = {
-                "Zona": ["Zona 1: Muy Ligera", "Zona 2: Ligera", "Zona 3: Aeróbica", "Zona 4: Umbral", "Zona 5: Máxima"],
-                "Mínimo (ppm)": [
-                    round(fc_max_int * 0.50),
-                    round(fc_max_int * 0.60),
-                    round(fc_max_int * 0.70),
-                    round(fc_max_int * 0.80),
-                    round(fc_max_int * 0.90),
-                ],
-                "Máximo (ppm)": [
-                    round(fc_max_int * 0.60),
-                    round(fc_max_int * 0.70),
-                    round(fc_max_int * 0.80),
-                    round(fc_max_int * 0.90),
-                    fc_max_int
-                ]
-            }
-            df_zonas = pd.DataFrame(zonas_data)
-            df_zonas.set_index('Zona', inplace=True)
-            
-            st.bar_chart(df_zonas, use_container_width=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.subheader("Rangos Exactos de Entrenamiento (ppm)")
-            
-            col_z1, col_z2, col_z3 = st.columns(3)
-            
-            col_z1.metric("Zona 1 (50%-60%)", f"{df_zonas.loc['Zona 1: Muy Ligera']['Mínimo (ppm)']} - {df_zonas.loc['Zona 1: Muy Ligera']['Máximo (ppm)']} ppm")
-            col_z1.metric("Zona 2 (60%-70%)", f"{df_zonas.loc['Zona 2: Ligera']['Mínimo (ppm)']} - {df_zonas.loc['Zona 2: Ligera']['Máximo (ppm)']} ppm")
-            col_z2.metric("Zona 3 (70%-80%)", f"{df_zonas.loc['Zona 3: Aeróbica']['Mínimo (ppm)']} - {df_zonas.loc['Zona 3: Aeróbica']['Máximo (ppm)']} ppm")
-            col_z2.metric("Zona 4 (80%-90%)", f"{df_zonas.loc['Zona 4: Umbral']['Mínimo (ppm)']} - {df_zonas.loc['Zona 4: Umbral']['Máximo (ppm)']} ppm")
-            col_z3.metric("Zona 5 (90%-100%)", f"{df_zonas.loc['Zona 5: Máxima']['Mínimo (ppm)']} - {df_zonas.loc['Zona 5: Máxima']['Máximo (ppm)']} ppm")
-
-            # --- Fin de la lógica del gráfico ---
-        else:
-            st.info("No se puede calcular la FC Máx. Asegúrate de que la columna 'Edad' esté registrada en tu perfil.")
-
-    st.markdown("---")
-    
-    # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
-    st.subheader("2. Estimador de Ritmo de Carrera (VAM)") # Cambiado a 2
-    
-    col_dist, col_min, col_sec = st.columns(3)
-
-    with col_dist:
-        test_dist = st.number_input("Distancia Total de la Prueba (metros):", min_value=100, value=2000, step=100, key='acond_dist')
-    
-    with col_min:
-        test_minutes = st.number_input("Tiempo de Prueba: Minutos:", min_value=0, value=7, step=1, key='acond_min')
-        
-    with col_sec:
-        test_seconds = st.number_input("Tiempo de Prueba: Segundos:", min_value=0, max_value=59, value=30, step=5, key='acond_sec')
-
-    total_seconds = (test_minutes * 60) + test_seconds
-    
-    if total_seconds > 0 and test_dist > 0:
-        v_ms = test_dist / total_seconds
-        v_kmh = v_ms * 3.6
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.metric("VAM Estimada", f"**{v_kmh:.2f} km/h**")
-        
-        st.markdown("---")
-        st.subheader("Ritmos de Carrera para Acondicionamiento:")
-        
-        ritmos = pd.DataFrame({
-            '% VAM': [100, 95, 90, 85, 80],
-            'Velocidad (km/h)': [v_kmh, v_kmh * 0.95, v_kmh * 0.90, v_kmh * 0.85, v_kmh * 0.80]
-        })
-        
-        def kmh_to_min_km(kmh):
-            if kmh == 0: return "N/D"
-            min_per_km = 60 / kmh
-            minutes = int(min_per_km)
-            seconds = int((min_per_km - minutes) * 60)
-            return f"{minutes}:{seconds:02d}"
-
-        ritmos['Ritmo (min/km)'] = ritmos['Velocidad (km/h)'].apply(kmh_to_min_km)
-        ritmos['Velocidad (km/h)'] = ritmos['Velocidad (km/h)'].round(2)
-        
-        st.dataframe(ritmos.set_index('% VAM'), use_container_width=True)
-    else:
-        st.info("Ingresa los datos de la prueba para calcular el VAM.")
-
-
-# ----------------------------------------------------------------------------------
-## PESTAÑA 7: GESTIÓN DE PESO (NUEVA PESTAÑA)
-# ----------------------------------------------------------------------------------
-
-with GESTION_PESO_TAB:
-    st.header("⚖️ Gestión de Peso y Nutrición")
+with NUTRICION_TAB:
+    st.header("🍎 Gestión de Peso, Nutrición y Suplementación")
     
     datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
     datos_rm = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if datos_rm is not None and atleta_actual in df_atletas['Atleta'].values else None
@@ -1424,8 +1260,8 @@ with GESTION_PESO_TAB:
     edad_anos = pd.to_numeric(datos_perfil.get('Edad', 0), errors='coerce', downcast='integer') if datos_perfil is not None else 0
     sexo = datos_perfil.get('Sexo', 'Hombre') if datos_perfil is not None else 'Hombre'
 
-
-    st.subheader("1. Cálculo de Tasa Metabólica Basal (TMB)")
+    # --- SECCIÓN 1: CÁLCULO DE TMB Y OBJETIVOS ---
+    st.subheader("1. Cálculo de Tasa Metabólica Basal (TMB) y Gasto Total")
     
     col_peso, col_alt, col_edad_sexo = st.columns(3)
     
@@ -1527,9 +1363,35 @@ with GESTION_PESO_TAB:
     else:
         st.warning("Ingresa tu Peso, Altura y Edad en tu Perfil para calcular tus métricas nutricionales.")
 
+    st.markdown("---")
+    
+    # --- SECCIÓN 4: GUÍA DE SUPLEMENTACIÓN (NUEVA) ---
+    st.subheader("4. Guía de Suplementación Básica y Protocolo de Ingesta")
+    st.caption("Información basada en evidencia para mejorar el rendimiento (Consulta a un profesional).")
+
+    # Suplementos de Rendimiento (Fuerza/Potencia)
+    st.markdown("##### Suplementos de Fuerza y Potencia ⚡")
+    df_fuerza = pd.DataFrame({
+        'Suplemento': ['Creatina Monohidrato', 'Cafeína'],
+        'Dosis Típica': ['3-5 g diarios', '3-6 mg/kg (60 min pre-entreno)'],
+        'Beneficios Clave': ['Aumenta fuerza, mejora recuperación entre series.', 'Reduce fatiga, mejora concentración y potencia.'],
+        'Momento Ideal': ['Cualquier momento del día (consistente)', '60 minutos antes de la sesión clave.']
+    }).set_index('Suplemento')
+    st.table(df_fuerza)
+
+    # Suplementos de Resistencia/Recuperación
+    st.markdown("##### Suplementos de Resistencia y Recuperación 🔋")
+    df_recuperacion = pd.DataFrame({
+        'Suplemento': ['Proteína Whey/Caseína', 'Beta-Alanina'],
+        'Dosis Típica': ['20-40 g por porción', '3-6 g diarios (repartido)'],
+        'Beneficios Clave': ['Reparación y crecimiento muscular.', 'Amortigua ácido láctico, mejora rendimiento en esfuerzos cortos.'],
+        'Momento Ideal': ['Post-entrenamiento y/o antes de dormir.', 'Repartido en varias tomas durante el día.']
+    }).set_index('Suplemento')
+    st.table(df_recuperacion)
+
 
 # ----------------------------------------------------------------------------------
-## PESTAÑA 8: RECUPERACIÓN (DIAGNÓSTICO DE SESIÓN)
+## PESTAÑA 8 (Ex-Recuperación): RECUPERACIÓN
 # ----------------------------------------------------------------------------------
 
 with RECUPERACION_TAB:
