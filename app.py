@@ -161,8 +161,7 @@ def load_table(table_name, required_cols=[]):
         try:
             return pd.read_sql_table(table_name, DB_ENGINE)
         except ValueError:
-            # Esto ocurre si la tabla existe pero está vacía o el esquema no coincide inicialmente
-            return pd.DataFrame(columns=required_cols)
+            return pd.DataFrame(columns=required_cols) # Tabla no encontrada
         except Exception as e:
             st.error(f"Error de lectura SQL en {table_name}: {e}")
             return pd.DataFrame(columns=required_cols)
@@ -209,10 +208,11 @@ def load_calendar_data():
 def load_tests_data():
     df, status = load_table(TABLES['pruebas'])
     
-    # --- CORRECCIÓN CLAVE ---
+    # --- CORRECCIÓN CLAVE para KeyError: 'Visible' ---
     if 'Visible' not in df.columns:
+        # Si no existe (primera vez), la creamos con un valor por defecto
         df['Visible'] = 'Sí'
-    # -------------------------
+    # ------------------------------------------
     
     df['Visible'] = df['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     return df, status
@@ -299,9 +299,6 @@ def save_tests_data(df_edited):
     
     return save_table(df_to_save, TABLES['pruebas'], load_tests_data)
 
-# [FALTA save_readiness_data y save_perfiles_data (usando save_table)]
-
-
 # --- 7. FUNCIONES DE CÁLCULO (Se mantienen) ---
 
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
@@ -343,7 +340,7 @@ df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
 df_test_results_full, test_results_status = load_test_results_data()
 
-# [El resto del código de la aplicación de Streamlit (Sección 4 en adelante, incluyendo login, pestañas y lógica de interfaz) se mantiene]
+# --- 9. CÓDIGO DE INTERFAZ DE STREAMLIT (PESTARÑAS) ---
 
 # Muestra mensajes de estado críticos (CREACIÓN o ERROR)
 if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
@@ -360,7 +357,7 @@ if test_results_status and ('creado' in test_results_status.lower() or 'error' i
     st.toast(test_results_status, icon="🏃")
 
 
-# --- 4. FUNCIONES AUXILIARES ---
+# --- 4. FUNCIONES AUXILIARES DE INTERFAZ ---
 
 def check_login(username, password):
     """Verifica el usuario y contraseña contra el DataFrame."""
@@ -710,7 +707,7 @@ with calc_tab:
         ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
         
         if not ejercicio_options:
-            st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
+            st.warning("No hay pruebas visibles. El Entrenador debe configurar las pruebas.")
             rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
         else:
             ejercicio_default = st.selectbox(
