@@ -5,6 +5,8 @@ import os
 import io
 from PIL import Image
 from datetime import datetime, timedelta, time
+# Importar la librería para incrustar el formulario
+import streamlit.components.v1 as components 
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS Y FUNCIONES DE CÁLCULO ---
 
@@ -26,13 +28,12 @@ PERFILES_FILE = 'perfiles.xlsx'
 RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
 
-# Archivo 6: Readiness
+# Archivo 6: Readiness (Mantener por si decides volver a guardar datos en este archivo)
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
 # Archivo 7: Resultados de Pruebas Físicas (NUEVO)
 TEST_RESULTS_FILE = 'test_results.xlsx'
-# Columnas que pediste, más ID y Atleta para identificación
 TEST_RESULTS_REQUIRED_COLUMNS = [
     'ID', 'Atleta', 'Fecha', '100m (s)', '400m (s)', '5k (min)', '10km (min)', 
     'Course Navette (max)', 'Salto Largo (cm)', 'Salto Alto (cm)', 
@@ -42,7 +43,11 @@ TEST_RESULTS_REQUIRED_COLUMNS = [
 # RUTA DEL LOGO
 LOGO_PATH = 'logo.png' 
 
-# --- FUNCIONES DE CÁLCULO (MOVIDAS AL INICIO PARA EVITAR NAMEERROR) ---
+# --- URL del Formulario de Google Forms (Persistencia de SRD) ---
+GOOGLE_FORM_EMBED_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdB4IZero1avUJ54oZv-RpzH_fBh_HFZ1klMuwcuDOEX4JuIw/viewform?embedded=true"
+
+
+# --- FUNCIONES DE CÁLCULO ---
 
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
@@ -74,7 +79,7 @@ def calculate_and_sort_ranking(df):
 # ----------------------------------------------------------------------------------
 
 
-# --- 2. FUNCIONES DE CARGA DE DATOS (CON CACHÉ) ---
+# --- 2. FUNCIONES DE CARGA DE DATOS (EXCEL) ---
 
 @st.cache_data(ttl=3600) 
 def load_data():
@@ -1529,45 +1534,25 @@ with GESTION_PESO_TAB:
 
 with RECUPERACION_TAB:
     st.header("🌡️ Protocolos de Recuperación y Movilidad")
-    st.caption("Herramientas de diagnóstico y guía para optimizar tu estado físico.")
+    st.caption("Responde el formulario diario para registrar tu estado de recuperación (los datos se guardan de forma permanente).")
     st.markdown("---")
 
-    # --- MÓDULO 1: DIAGNÓSTICO DE ESTADO SRD (EN VIVO) ---
-    st.subheader("1. Diagnóstico de Recuperación de Sesión (SRD)")
+    # 🚨 1. ENLACE AL FORMULARIO DE GOOGLE (SOLUCIÓN PERSISTENTE)
+    # Reemplazamos los sliders con el formulario de Google Forms
     
-    st.caption("Mueve los deslizadores para obtener una recomendación de intensidad instantánea.")
-
-    col_sleep, col_pain, col_ready = st.columns(3)
+    st.subheader("Formulario de Diagnóstico SRD")
     
-    with col_sleep:
-        sueno = st.slider("1. Calidad del Sueño:", min_value=1, max_value=5, value=4, help="1=Pésimo, 5=Excelente", key='session_sueno')
+    # Incrusta el formulario de Google Forms
+    components.iframe(
+        GOOGLE_FORM_EMBED_URL, 
+        height=700, 
+        scrolling=True
+    )
     
-    with col_pain:
-        molestias = st.slider("2. Nivel de Molestias/Dolor:", min_value=1, max_value=5, value=2, help="1=Ninguna, 5=Severa", key='session_molestias')
-        
-    with col_ready:
-        disposicion = st.slider("3. Disposición para Entrenar:", min_value=1, max_value=5, value=4, help="1=Baja, 5=Alta", key='session_disposicion')
-        
-    # Cálculo de la Puntuación Media
-    score = (sueno + (5 - molestias) + disposicion) / 3 
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    if score >= 4.0:
-        st.success(f"🟢 **SCORE SRD: {score:.1f}** (Óptimo)")
-        st.markdown("**Recomendación:** Estás en estado óptimo. Sigue tu programación con intensidad.", unsafe_allow_html=True)
-    elif score >= 3.0:
-        st.warning(f"🟡 **SCORE SRD: {score:.1f}** (Adecuado)")
-        st.markdown("**Recomendación:** Estado adecuado. Procede, pero respeta estrictamente los RIR/RPE y reduce el volumen si sientes fatiga.", unsafe_allow_html=True)
-    else:
-        st.error(f"🔴 **SCORE SRD: {score:.1f}** (Bajo)")
-        st.markdown("**Recomendación:** **ALERTA DE FATIGA.** Considera reducir la carga (ej., trabajar con 5% menos de peso) y el volumen.", unsafe_allow_html=True)
-
     st.markdown("---")
     
-    # --- MÓDULO 2: PROTOCOLOS DE GUÍA (Información estática) ---
+    # --- MÓDULO 2: PROTOCOLOS DE GUÍA (Información estática que se mantiene) ---
     st.subheader("2. Protocolos de Recuperación y Guía de Sueño")
-    st.caption("Guías de referencia para mejorar tu estado actual.")
     
     col_crio, col_termo = st.columns(2)
     
