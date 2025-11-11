@@ -721,7 +721,6 @@ def end_session_click():
     st.session_state['last_time_ms'] = '---'
     st.session_state['max_tests_reaction'] = 10 
     
-    # Si la sesión termina, aseguramos que la pestaña sea la misma.
     st.session_state['active_tab'] = '⚡ ReactionLab'
 
 def start_reaction_test():
@@ -968,7 +967,6 @@ if test_results_status and ('creado' in test_results_status.lower() or 'error' i
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
-
 # Inicializar el estado de la sesión
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -1037,21 +1035,18 @@ if st.session_state['logged_in']:
     else:
         tab_names = ["🧮 Calculadora de Carga", "🏋️ Pruebas Físicas", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🍎 Nutrición", "🌡️ Recuperación", "🏆 Ranking", "⚡ ReactionLab"]
 
-    # Determinar la pestaña activa (para evitar el salto)
+    # --- LÓGICA DE PERSISTENCIA DE PESTAÑA (CORRECCIÓN) ---
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
-        st.session_state['active_tab'] = tab_names[0]
+        st.session_state['active_tab'] = tab_names[-1] # Por defecto, la última (ReactionLab)
 
-    # Crear las pestañas
+    # Creamos las pestañas y seleccionamos la activa
     tabs = st.tabs(tab_names)
-    
-    tab_map = {name: tabs[i] for i, name in enumerate(tab_names)}
     
     # Asignar nombres a las pestañas para el código (esto depende del rol)
     if rol_actual == 'Entrenador':
         tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
     else:
         tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
-
 
     # ----------------------------------------------------------------------------------
     ## PESTAÑA DE REACCIÓN (ReactionLab)
