@@ -140,7 +140,7 @@ def calculate_and_sort_ranking(df):
 
 @st.cache_data(ttl=3600) 
 def load_data():
-    """Carga los datos de los atletas desde la Base de Datos."""
+    """Carga los datos de los atletas desde la Base de Datos con máxima robustez."""
     conn = get_db_connection()
     status_message = None
     
@@ -149,15 +149,17 @@ def load_data():
         df = pd.read_sql_query("SELECT * FROM atletas_data", conn)
         df.columns = df.columns.str.strip() 
         
-        # --- CORRECCIÓN DE CODIFICACIÓN Y NOMBRES DE COLUMNAS DB (CRUCIAL PARA LOGIN) ---
+        # --- CORRECCIÓN DE CODIFICACIÓN Y NOMBRES DE COLUMNAS DB (ROBUSTO) ---
         if 'Contrase√±a' in df.columns:
             df.rename(columns={'Contrase√±a': 'Contraseña'}, inplace=True)
         if '√öltima_Fecha' in df.columns:
              df.rename(columns={'√öltima_Fecha': 'Última_Fecha'}, inplace=True)
 
         if 'Atleta' in df.columns:
-            # Reemplaza los caracteres erróneos comunes de migración (UTF-8 a latin-1)
-            df['Atleta'] = df['Atleta'].str.replace('√©', 'é').str.replace('√≥', 'ó').str.replace('√±', 'ñ') 
+            # 1. Limpieza de codificación (caracteres especiales)
+            df['Atleta'] = df['Atleta'].astype(str).str.replace('√©', 'é').str.replace('√≥', 'ó').str.replace('√±', 'ñ') 
+            # 2. Limpieza de espacios en los nombres de atleta (CRUCIAL)
+            df['Atleta'] = df['Atleta'].str.strip() 
         # --------------------------------------------------------------------------------
 
         if df.empty or 'ID' not in df.columns:
@@ -189,6 +191,7 @@ def load_data():
 
     # --- CORRECCIÓN CLAVE PARA EL LOGIN (Asegurar que la Contraseña sea TEXTO PURO) ---
     if 'Contraseña' in df.columns:
+        # Aseguramos que sea string, y limpiamos cualquier espacio
         df['Contraseña'] = df['Contraseña'].astype(str).str.strip() 
     # ---------------------------------------------------------------------------------
 
@@ -605,12 +608,11 @@ def check_login(username, password):
     password_clean = password.strip()
     
     # Buscamos la fila del usuario, limpiando el nombre de atleta de la DB por si acaso
-    # La columna 'Atleta' se limpia de caracteres especiales en load_data()
     user_row = df_atletas[df_atletas['Atleta'].str.lower().str.strip() == username_clean]
     
     if not user_row.empty:
         # Extraemos la contraseña de la DB y nos aseguramos de que sea texto limpio
-        # La columna 'Contraseña' ya es string y se limpia de espacios en load_data()
+        # Esto es robusto contra problemas de espacios residuales en la BD.
         db_password = str(user_row['Contraseña'].iloc[0]).strip()
         
         # Comparación estricta
