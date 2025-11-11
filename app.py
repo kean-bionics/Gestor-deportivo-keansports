@@ -721,7 +721,8 @@ def end_session_click():
     st.session_state['last_time_ms'] = '---'
     st.session_state['max_tests_reaction'] = 10 
     
-    # Nota: No se usa st.rerun() aquí, Streamlit se recarga por la acción del botón
+    # Si la sesión termina, aseguramos que la pestaña sea la misma.
+    st.session_state['active_tab'] = '⚡ ReactionLab'
 
 def start_reaction_test():
     """Inicializa la sesión y comienza el primer intento (ROJO)."""
@@ -750,7 +751,8 @@ def start_reaction_test():
     st.session_state['hits'] = 0
     st.session_state['last_time_ms'] = '---'
     st.session_state['avg_time_display'] = '---'
-    
+    st.session_state['active_tab'] = '⚡ ReactionLab'
+
     # Forzar recarga para actualizar la UI a ROJO
     st.rerun()
 
@@ -770,6 +772,7 @@ def simulate_delay_and_go():
         # 3. Transicionar a VERDE
         st.session_state['reaction_state'] = 'VERDE'
         st.session_state['reaction_start_time'] = time.time() # Iniciar cronómetro de reacción
+        st.session_state['active_tab'] = '⚡ ReactionLab'
         st.rerun() # Forzar el cambio a VERDE
 
 def update_reaction_state():
@@ -799,6 +802,7 @@ def update_reaction_state():
             st.session_state['reaction_state'] = 'ROJO'
             st.session_state['reaction_start_time'] = time.time() # Reiniciar el timer de inicio
 
+    st.session_state['active_tab'] = '⚡ ReactionLab'
     st.rerun() # Forzar recarga para actualizar la UI
 
 def handle_reaction_click():
@@ -825,7 +829,8 @@ def handle_reaction_click():
         st.session_state['misses'] += 1
         st.session_state['test_count'] += 1 
         st.session_state['is_playing_reaction'] = False # Parar la sesión por falso inicio
-
+    
+    st.session_state['active_tab'] = '⚡ ReactionLab'
     st.rerun() # Forzar recarga para actualizar el estado inmediatamente (HIT/FALLO)
 
 def show_reaction_lab(atleta_actual):
@@ -930,6 +935,7 @@ def show_reaction_lab(atleta_actual):
         df_historial = df_reaction_records[df_reaction_records['Atleta'] == atleta_actual].copy()
         st.dataframe(df_historial[['Fecha', 'Tiempo_ms']].tail(5), use_container_width=True)
 
+
 # --- 5. CARGA INICIAL DE DATAFRAMES ---
 
 df_atletas, initial_status = load_data()  
@@ -1027,30 +1033,25 @@ if st.session_state['logged_in']:
     
     # === DEFINICIÓN DE PESTAÑAS (¡NUEVA PESTAÑA INTEGRADA!) ===
     if rol_actual == 'Entrenador':
-        tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = st.tabs([
-            "📊 Vista Entrenador (Datos)",  
-            "🧮 Calculadora de Carga",  
-            "🏋️ Pruebas Físicas",
-            "📅 Calendario",  
-            "👤 Perfil",  
-            "🏃 Acondicionamiento",  
-            "🍎 Nutrición",
-            "🌡️ Recuperación",
-            "🏆 Ranking",
-            "⚡ ReactionLab" # NUEVA PESTAÑA
-        ])
+        tab_names = ["📊 Vista Entrenador (Datos)", "🧮 Calculadora de Carga", "🏋️ Pruebas Físicas", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🍎 Nutrición", "🌡️ Recuperación", "🏆 Ranking", "⚡ ReactionLab"]
     else:
-        tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = st.tabs([
-            "🧮 Calculadora de Carga",  
-            "🏋️ Pruebas Físicas",
-            "📅 Calendario",  
-            "👤 Perfil",  
-            "🏃 Acondicionamiento",  
-            "🍎 Nutrición",
-            "🌡️ Recuperación",
-            "🏆 Ranking",
-            "⚡ ReactionLab" # NUEVA PESTAÑA
-        ])
+        tab_names = ["🧮 Calculadora de Carga", "🏋️ Pruebas Físicas", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🍎 Nutrición", "🌡️ Recuperación", "🏆 Ranking", "⚡ ReactionLab"]
+
+    # Determinar la pestaña activa (para evitar el salto)
+    if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
+        st.session_state['active_tab'] = tab_names[0]
+
+    # Crear las pestañas
+    tabs = st.tabs(tab_names)
+    
+    tab_map = {name: tabs[i] for i, name in enumerate(tab_names)}
+    
+    # Asignar nombres a las pestañas para el código (esto depende del rol)
+    if rol_actual == 'Entrenador':
+        tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
+    else:
+        tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
+
 
     # ----------------------------------------------------------------------------------
     ## PESTAÑA DE REACCIÓN (ReactionLab)
