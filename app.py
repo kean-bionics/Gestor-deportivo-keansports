@@ -148,6 +148,17 @@ def load_data():
         # 1. Cargar los datos de la tabla 'atletas_data'
         df = pd.read_sql_query("SELECT * FROM atletas_data", conn)
         df.columns = df.columns.str.strip() 
+        
+        # --- CORRECCIÓN DE CODIFICACIÓN Y NOMBRES DE COLUMNAS DB (CRUCIAL PARA LOGIN) ---
+        if 'Contrase√±a' in df.columns:
+            df.rename(columns={'Contrase√±a': 'Contraseña'}, inplace=True)
+        if '√öltima_Fecha' in df.columns:
+             df.rename(columns={'√öltima_Fecha': 'Última_Fecha'}, inplace=True)
+
+        if 'Atleta' in df.columns:
+            # Reemplaza los caracteres erróneos comunes de migración (UTF-8 a latin-1)
+            df['Atleta'] = df['Atleta'].str.replace('√©', 'é').str.replace('√≥', 'ó').str.replace('√±', 'ñ') 
+        # --------------------------------------------------------------------------------
 
         if df.empty or 'ID' not in df.columns:
             raise Exception("Tabla vacía o incompleta, creando datos de ejemplo.")
@@ -176,10 +187,10 @@ def load_data():
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
 
-    # --- CORRECCIÓN CLAVE PARA EL LOGIN ---
+    # --- CORRECCIÓN CLAVE PARA EL LOGIN (Asegurar que la Contraseña sea TEXTO PURO) ---
     if 'Contraseña' in df.columns:
         df['Contraseña'] = df['Contraseña'].astype(str).str.strip() 
-    # -------------------------------------
+    # ---------------------------------------------------------------------------------
 
     if 'Nueva_Prueba' in df.columns:
         df = df.drop(columns=['Nueva_Prueba'])
@@ -589,12 +600,23 @@ def check_login(username, password):
         st.error("Error: Los datos de atletas no se han cargado correctamente.")
         return False, None, None
 
-    user_row = df_atletas[df_atletas['Atleta'].str.lower() == username.lower()]
+    # Limpiamos espacios del input del usuario antes de buscar
+    username_clean = username.lower().strip() 
+    password_clean = password.strip()
+    
+    # Buscamos la fila del usuario, limpiando el nombre de atleta de la DB por si acaso
+    # La columna 'Atleta' se limpia de caracteres especiales en load_data()
+    user_row = df_atletas[df_atletas['Atleta'].str.lower().str.strip() == username_clean]
     
     if not user_row.empty:
-        # Nota: La columna Contraseña ya es string gracias a la corrección en load_data()
-        if user_row['Contraseña'].iloc[0] == password:
+        # Extraemos la contraseña de la DB y nos aseguramos de que sea texto limpio
+        # La columna 'Contraseña' ya es string y se limpia de espacios en load_data()
+        db_password = str(user_row['Contraseña'].iloc[0]).strip()
+        
+        # Comparación estricta
+        if db_password == password_clean:
             return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
+            
     return False, None, None
 
 def login_form():
