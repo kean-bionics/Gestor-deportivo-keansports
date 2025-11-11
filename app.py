@@ -828,7 +828,7 @@ def handle_reaction_click():
         st.session_state['misses'] += 1
         st.session_state['test_count'] += 1 
         st.session_state['is_playing_reaction'] = False # Parar la sesión por falso inicio
-    
+
     st.session_state['active_tab'] = '⚡ ReactionLab'
     st.rerun() # Forzar recarga para actualizar el estado inmediatamente (HIT/FALLO)
 
@@ -902,7 +902,7 @@ def show_reaction_lab(atleta_actual):
         # Botón SIGUIENTE INTENTO (Necesario después de HIT/FALLO)
         is_advancing_disabled = not is_playing or current_state not in ['HIT', 'FALLO_TIEMPO', 'FALSO_INICIO']
 
-        st.button("SIGUIENTE INTENTO", on_click=update_reaction_state, 
+        st.button("SIGUIENTE INTENTO", on_on_click=update_reaction_state, 
                   type="secondary", 
                   disabled=is_advancing_disabled,
                   help="Avanza a la fase de espera del siguiente intento después de un resultado.")
@@ -1037,21 +1037,28 @@ if st.session_state['logged_in']:
 
     # --- LÓGICA DE PERSISTENCIA DE PESTAÑA (CORRECCIÓN) ---
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
-        st.session_state['active_tab'] = tab_names[-1] # Por defecto, la última (ReactionLab)
+        st.session_state['active_tab'] = tab_names[0] 
 
-    # Creamos las pestañas y seleccionamos la activa
-    tabs = st.tabs(tab_names)
+    # Creamos las pestañas y seleccionamos la activa usando el index()
+    try:
+        active_index = tab_names.index(st.session_state['active_tab'])
+    except ValueError:
+        active_index = 0
+
+    tabs = st.tabs(tab_names, active_index) # Usamos active_index para seleccionar la pestaña
     
     # Asignar nombres a las pestañas para el código (esto depende del rol)
     if rol_actual == 'Entrenador':
         tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
     else:
         tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
-
+    
     # ----------------------------------------------------------------------------------
     ## PESTAÑA DE REACCIÓN (ReactionLab)
     # ----------------------------------------------------------------------------------
     with REACTION_TAB:
+        # Guardamos la pestaña activa en la sesión cada vez que cargamos el contenido
+        st.session_state['active_tab'] = '⚡ ReactionLab'
         show_reaction_lab(atleta_actual)
 
 
@@ -1078,6 +1085,7 @@ if st.session_state['logged_in']:
     # ----------------------------------------------------------------------------------
     if rol_actual == 'Entrenador':
         with tab1:
+            st.session_state['active_tab'] = '📊 Vista Entrenador (Datos)'
             st.header("Datos de Atletas y Marcas RM")
             st.subheader("Control Total (Vista del Entrenador)")
             
@@ -1178,6 +1186,7 @@ if st.session_state['logged_in']:
     calc_tab = tab2  
 
     with calc_tab:
+        st.session_state['active_tab'] = '🧮 Calculadora de Carga'
         st.header("🧮 Calculadora de Carga")
         
         if atleta_actual not in df_atletas['Atleta'].values:
@@ -1332,6 +1341,7 @@ if st.session_state['logged_in']:
     ## PESTAÑA 3: PRUEBAS FÍSICAS (NUEVA - Visible para todos)
     # ----------------------------------------------------------------------------------
     with PRUEBAS_TAB:
+        st.session_state['active_tab'] = '🏋️ Pruebas Físicas'
         st.header("🏋️ Historial y Gestión de Pruebas Físicas")
         st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**.")
 
@@ -1456,6 +1466,7 @@ if st.session_state['logged_in']:
     ## PESTAÑA 4: CALENDARIO (Visible para todos)
     # ----------------------------------------------------------------------------------
     with CALENDAR_TAB:
+        st.session_state['active_tab'] = '📅 Calendario'
         st.header("📅 Calendario de Pruebas y Actividades")
         st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
         
@@ -1518,6 +1529,7 @@ if st.session_state['logged_in']:
     ## PESTAÑA 5: PERFIL (Visible para todos)
     # ----------------------------------------------------------------------------------
     with PERFIL_TAB:
+        st.session_state['active_tab'] = '👤 Perfil'
         st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
         st.caption(f"Archivos de origen: Atletas y Perfiles")
 
@@ -1607,6 +1619,7 @@ if st.session_state['logged_in']:
     ## PESTAÑA 6: ACONDICIONAMIENTO
     # ----------------------------------------------------------------------------------
     with ACOND_TAB:
+        st.session_state['active_tab'] = '🏃 Acondicionamiento'
         st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
         
         datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
@@ -1723,6 +1736,7 @@ if st.session_state['logged_in']:
     ## PESTAÑA 7 (Ex-Gestión de Peso): NUTRICIÓN
     # ----------------------------------------------------------------------------------
     with NUTRICION_TAB:
+        st.session_state['active_tab'] = '🍎 Nutrición'
         st.header("🍎 Gestión de Peso, Nutrición y Suplementación")
         
         # Búsqueda de datos para el cálculo (CORRECCIÓN INTEGRADA A LA PESTAÑA)
@@ -1876,6 +1890,7 @@ if st.session_state['logged_in']:
     # ----------------------------------------------------------------------------------
 
     with RECUPERACION_TAB:
+        st.session_state['active_tab'] = '🌡️ Recuperación'
         st.header("🌡️ Protocolos de Recuperación y Movilidad")
         st.caption("Responde el formulario diario para registrar tu estado de recuperación (los datos se guardan de forma permanente).")
         st.markdown("---")
@@ -1931,6 +1946,7 @@ if st.session_state['logged_in']:
     ## PESTAÑA 9: RANKING (Visible para todos)
     # ----------------------------------------------------------------------------------
     with RANKING_TAB:
+        st.session_state['active_tab'] = '🏆 Ranking'
         st.header("🏆 Ranking de Atletas")
         st.caption("Ordenado por: **Oros > Platas > Bronces**. (Oro=10, Plata=3, Bronce=1)")
         st.caption(f"Archivo de origen: **{RANKING_FILE}**")
