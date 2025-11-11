@@ -1368,7 +1368,7 @@ if st.session_state['logged_in']:
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
         st.session_state['active_tab'] = tab_names[0] 
 
-    # Creamos las pestañas usando la sintaxis correcta
+    # Creamos las pestañas usando la sintaxis estable: st.tabs(opciones, default_value)
     tabs = st.tabs(tab_names, st.session_state['active_tab'])
 
     # Asignar nombres a las pestañas para el código (esto depende del rol)
