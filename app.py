@@ -20,6 +20,7 @@ CALENDAR_REQUIRED_COLUMNS = ['Evento', 'Fecha', 'Detalle', 'Habilitado']
 
 # Archivo 3: Pruebas Activas (Modularidad de la Calculadora)
 PRUEBAS_FILE = 'pruebas_activas.xlsx'
+PRUEBAS_REQUIRED_COLUMNS = ['NombrePrueba', 'ColumnaRM', 'Visible'] # Añadida para robustez
 
 # Archivo 4: Perfiles de Atletas
 PERFILES_FILE = 'perfiles.xlsx'
@@ -32,16 +33,12 @@ RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas',
 READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
 
-# Archivo 7: Resultados de Pruebas Físicas (NUEVO)
+# Archivo 7: Resultados de Pruebas Físicas (DINÁMICO - SOLO SE REQUIEREN COLUMNAS MÍNIMAS)
 TEST_RESULTS_FILE = 'test_results.xlsx'
-TEST_RESULTS_REQUIRED_COLUMNS = [
-    'ID', 'Atleta', 'Fecha', '100m (s)', '400m (s)', '5k (min)', '10km (min)', 
-    'Course Navette (max)', 'Salto Largo (cm)', 'Salto Alto (cm)', 
-    'Dinamometria Izq (kg)', 'Dinamometria Der (kg)'
-]
+# TEST_RESULTS_REQUIRED_COLUMNS (ELIMINADA: Se carga dinámicamente)
 
 # RUTA DEL LOGO
-LOGO_PATH = 'logo.png' 
+LOGO_PATH = 'logo.png'  
 
 # --- URL del Formulario de Google Forms (Persistencia de SRD) ---
 GOOGLE_FORM_EMBED_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdB4IZero1avUJ54oZv-RpzH_fBh_HFZ1klMuwcuDOEX4JuIw/viewform?embedded=true"
@@ -81,7 +78,7 @@ def calculate_and_sort_ranking(df):
 
 # --- 2. FUNCIONES DE CARGA DE DATOS (EXCEL) ---
 
-@st.cache_data(ttl=3600) 
+@st.cache_data(ttl=3600)  
 def load_data():
     """Carga los datos de los atletas. Si no existe, lo crea."""
     df = pd.DataFrame()
@@ -91,7 +88,7 @@ def load_data():
     if excel_exists:
         try:
             df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
-            df.columns = df.columns.str.strip() 
+            df.columns = df.columns.str.strip()  
             
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
             if missing_cols:
@@ -108,25 +105,25 @@ def load_data():
         data = {
             'ID': [1, 2, 3],
             'Atleta': ['Juan Pérez', 'Ana Gómez', 'Tu Nombre'],
-            'Contraseña': ['1234', '5678', 'admin'], 
-            'Rol': ['Atleta', 'Atleta', 'Entrenador'], 
+            'Contraseña': ['1234', '5678', 'admin'],  
+            'Rol': ['Atleta', 'Atleta', 'Entrenador'],  
             'Sentadilla_RM': [140.0, 95.0, 160.0],
             'PressBanca_RM': [100.0, 55.0, 115.0],
             'PesoCorporal': [80.0, 60.0, 90.0],
             'Última_Fecha': ['2023-10-15', '2023-10-10', '2023-10-12']
         }
-        df = pd.DataFrame(data, columns=REQUIRED_COLUMNS) 
+        df = pd.DataFrame(data, columns=REQUIRED_COLUMNS)  
         
-        df.to_excel(EXCEL_FILE, index=False, engine='openpyxl') 
+        df.to_excel(EXCEL_FILE, index=False, engine='openpyxl')  
         status_message += " Archivo creado con éxito."
         
     if 'Última_Fecha' in df.columns:
-        df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
+        df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce')  
 
     if 'Nueva_Prueba' in df.columns:
         df = df.drop(columns=['Nueva_Prueba'])
     
-    return df, status_message 
+    return df, status_message  
 
 @st.cache_data(ttl=600)
 def load_calendar_data():
@@ -137,13 +134,13 @@ def load_calendar_data():
     if excel_exists:
         try:
             calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
-            calendar_df.columns = calendar_df.columns.str.strip() 
+            calendar_df.columns = calendar_df.columns.str.strip()  
             
             if 'Fecha' in calendar_df.columns:
                 calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
 
         except:
-             excel_exists = False
+            excel_exists = False
 
     if not excel_exists or calendar_df.empty:
         data = {
@@ -152,9 +149,9 @@ def load_calendar_data():
             'Detalle': ['Test de 1RM', 'Test de Cooper o 5K', 'Revisión de Mes'],
             'Habilitado': ['Sí', 'Sí', 'No']
         }
-        calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS) 
+        calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS)  
         calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
-        calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl') 
+        calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl')  
 
     if 'Habilitado' in calendar_df.columns:
         calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
@@ -163,27 +160,41 @@ def load_calendar_data():
 
 @st.cache_data(ttl=3600)
 def load_tests_data():
-    """Carga la lista de pruebas activas."""
+    """Carga la lista de pruebas activas, asegurando la estructura."""
     status_message = None
+    excel_exists = os.path.exists(PRUEBAS_FILE)
+    df_tests = pd.DataFrame()
     
-    if not os.path.exists(PRUEBAS_FILE):
+    if excel_exists:
+        try:
+            df_tests = pd.read_excel(PRUEBAS_FILE, engine='openpyxl')
+            df_tests.columns = df_tests.columns.str.strip()
+            
+            # --- LÓGICA DE ROBUSTEZ (Mantenemos esta lista para asegurar el funcionamiento) ---
+            missing_cols = [col for col in PRUEBAS_REQUIRED_COLUMNS if col not in df_tests.columns]
+            if missing_cols:
+                status_message = f"ADVERTENCIA: El archivo de pruebas existe, pero faltan columnas: {', '.join(missing_cols)}. Se añadirán vacías."
+                for col in missing_cols:
+                    df_tests[col] = None
+            # -------------------------------
+                    
+        except Exception as e:
+            status_message = f"Error al leer el archivo de pruebas ({e}). Se creará un archivo nuevo de ejemplo."
+            excel_exists = False
+
+    if not excel_exists or df_tests.empty:
+        status_message = f"Creando el archivo '{PRUEBAS_FILE}' de ejemplo con la estructura inicial."
         data = {
             'NombrePrueba': ['Sentadilla', 'Press Banca', 'Peso Muerto', 'Otro'],
             'ColumnaRM': ['Sentadilla_RM', 'PressBanca_RM', 'PesoMuerto_RM', 'N/A'],
             'Visible': ['Sí', 'Sí', 'No', 'Sí']
         }
-        df_tests = pd.DataFrame(data)
+        df_tests = pd.DataFrame(data, columns=PRUEBAS_REQUIRED_COLUMNS)
         df_tests.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
-        status_message = f"Archivo '{PRUEBAS_FILE}' creado con éxito."
-    
-    try:
-        df_tests = pd.read_excel(PRUEBAS_FILE, engine='openpyxl')
-        df_tests.columns = df_tests.columns.str.strip()
-    except Exception as e:
-        status_message = f"Error al cargar {PRUEBAS_FILE}: {e}"
-        return pd.DataFrame(), status_message 
+        status_message += " Archivo creado con éxito."
 
-    df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
+    if 'Visible' in df_tests.columns:
+        df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
     
     return df_tests, status_message 
 
@@ -212,14 +223,14 @@ def load_perfil_data():
             df_perfil.columns = df_perfil.columns.str.strip()
             
             if 'Sexo' not in df_perfil.columns:
-                 df_perfil['Sexo'] = 'Hombre'
-                 
+                df_perfil['Sexo'] = 'Hombre'
+                
         except:
-             excel_exists = False
+            excel_exists = False
 
     if not excel_exists or df_perfil.empty:
-        df_perfil = pd.DataFrame(DEFAULT_PROFILE_DATA, columns=REQUIRED_PROFILE_COLUMNS) 
-        df_perfil.to_excel(PERFILES_FILE, index=False, engine='openpyxl') 
+        df_perfil = pd.DataFrame(DEFAULT_PROFILE_DATA, columns=REQUIRED_PROFILE_COLUMNS)  
+        df_perfil.to_excel(PERFILES_FILE, index=False, engine='openpyxl')  
         status_message = f"Archivo '{PERFILES_FILE}' creado con éxito."
 
     return df_perfil, status_message
@@ -234,16 +245,16 @@ def load_ranking_data():
     if excel_exists:
         try:
             df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
-            df_ranking.columns = df_ranking.columns.str.strip() 
+            df_ranking.columns = df_ranking.columns.str.strip()  
             
             missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
             if missing_cols:
-                 status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
-                 full_ranking_cols = RANKING_REQUIRED_COLUMNS + ['Puntos'] 
-                 df_ranking = pd.DataFrame(columns=full_ranking_cols) 
+                status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Se añadirán vacías."
+                full_ranking_cols = RANKING_REQUIRED_COLUMNS + ['Puntos']  
+                df_ranking = pd.DataFrame(columns=full_ranking_cols)  
             
         except:
-             excel_exists = False
+            excel_exists = False
 
     if not excel_exists or df_ranking.empty:
         data = {
@@ -254,7 +265,7 @@ def load_ranking_data():
             'Platas': [2, 3, 0, 1],
             'Bronces': [1, 0, 1, 2],
         }
-        df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS) 
+        df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS)  
         df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
         status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
 
@@ -276,7 +287,7 @@ def load_readiness_data():
             df_readiness.columns = df_readiness.columns.str.strip()
             df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
         except:
-             excel_exists = False
+            excel_exists = False
 
     if not excel_exists or df_readiness.empty:
         data = {
@@ -286,75 +297,66 @@ def load_readiness_data():
             'Molestias': [2, 3, 1],
             'Disposicion': [5, 4, 5]
         }
-        df_readiness = pd.DataFrame(data, columns=READINESS_REQUIRED_COLUMNS) 
+        df_readiness = pd.DataFrame(data, columns=READINESS_REQUIRED_COLUMNS)  
         df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
-        df_readiness.to_excel(READINESS_FILE, index=False, engine='openpyxl') 
+        df_readiness.to_excel(READINESS_FILE, index=False, engine='openpyxl')  
         status_message = f"Archivo '{READINESS_FILE}' creado con éxito."
     
     return df_readiness, status_message
 
 @st.cache_data(ttl=3600)
 def load_test_results_data():
-    """Carga los datos de los resultados de pruebas físicas. Si no existe, lo crea."""
+    """Carga los datos de los resultados de pruebas físicas de forma completamente dinámica."""
     df = pd.DataFrame()
     excel_exists = os.path.exists(TEST_RESULTS_FILE)
     status_message = None
+    
+    # Definimos solo las columnas ADMINISTRATIVAS mínimas que SIEMPRE deben existir
+    MINIMUM_ADMIN_COLS = ['ID', 'Atleta', 'Fecha'] 
     
     if excel_exists:
         try:
             df = pd.read_excel(TEST_RESULTS_FILE, engine='openpyxl')
             df.columns = df.columns.str.strip()
             
-            # Asegurar que las columnas requeridas existan
-            missing_cols = [col for col in TEST_RESULTS_REQUIRED_COLUMNS if col not in df.columns]
-            if missing_cols:
-                status_message = f"ADVERTENCIA: El archivo de pruebas físicas existe, pero faltan columnas: {', '.join(missing_cols)}. Se añadirán vacías."
-                for col in missing_cols:
-                    df[col] = None
-                    
+            # --- Lógica de Comprobación Mínima ---
+            if df.empty or not all(col in df.columns for col in MINIMUM_ADMIN_COLS):
+                 raise Exception("El archivo de pruebas está vacío o le faltan columnas mínimas.")
+                 
         except Exception as e:
             status_message = f"Error al leer el archivo Excel de pruebas físicas ({e}). Se creará un archivo nuevo de ejemplo."
             excel_exists = False
 
-    if not excel_exists or df.empty or len(df.columns) < 3: 
-        status_message = f"Creando el archivo '{TEST_RESULTS_FILE}' de ejemplo con la estructura inicial."
+    if not excel_exists or df.empty or len(df.columns) < len(MINIMUM_ADMIN_COLS): 
+        # Si el archivo no existe o está corrupto, creamos una estructura de ejemplo
+        status_message = f"Creando el archivo '{TEST_RESULTS_FILE}' de ejemplo con la estructura inicial mínima."
         data = {
             'ID': [1, 2, 3],
             'Atleta': ['Juan Pérez', 'Ana Gómez', 'Tu Nombre'],
             'Fecha': [datetime.now().date(), datetime.now().date() - timedelta(days=7), datetime.now().date() - timedelta(days=14)],
-            '100m (s)': [11.5, 13.2, 11.0],
-            '400m (s)': [55.0, 68.0, 52.0],
-            '5k (min)': [22.0, 28.0, 20.0],
-            '10km (min)': [48.0, 60.0, 42.0],
-            'Course Navette (max)': [12, 9, 14],
-            'Salto Largo (cm)': [250, 220, 270],
-            'Salto Alto (cm)': [65, 55, 75],
-            'Dinamometria Izq (kg)': [50, 35, 60],
-            'Dinamometria Der (kg)': [55, 38, 65]
+            'Ejemplo_100m_s': [11.5, 13.2, 11.0], # Columna de ejemplo
+            'Ejemplo_Salto_cm': [250, 220, 270], # Columna de ejemplo
         }
-        df = pd.DataFrame(data, columns=TEST_RESULTS_REQUIRED_COLUMNS)
-        
+        # Usamos las claves del diccionario como columnas iniciales
+        df = pd.DataFrame(data)
         df.to_excel(TEST_RESULTS_FILE, index=False, engine='openpyxl')
         status_message += " Archivo creado con éxito."
-        
-    # Conversión de tipos de datos para columnas conocidas
+            
+    # Conversión de tipos de datos: Aplicamos la lógica dinámica
     
-    # 1. Handle Date column
     if 'Fecha' in df.columns:
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce').dt.date
 
-    # 2. Handle ID (must be numeric for exclusion in editor config)
-    df['ID'] = pd.to_numeric(df['ID'], errors='coerce').fillna(0).astype(int)
+    if 'ID' in df.columns:
+        df['ID'] = pd.to_numeric(df['ID'], errors='coerce').fillna(0).astype(int)
 
-    # 3. Handle Numeric columns (FIX: Explicitly convert all known numeric columns to float)
-    numeric_cols = [
-        '100m (s)', '400m (s)', '5k (min)', '10km (min)', 'Course Navette (max)', 
-        'Salto Largo (cm)', 'Salto Alto (cm)', 'Dinamometria Izq (kg)', 'Dinamometria Der (kg)'
-    ]
+    # 3. Handle Numeric columns: Intentamos convertir todas las columnas de pruebas a float.
+    cols_to_skip = ['ID', 'Atleta', 'Fecha']
+    numeric_cols_found = [col for col in df.columns if col not in cols_to_skip]
     
-    for col in numeric_cols:
-        if col in df.columns:
-            # Coerce to float, which handles NaN (empty cells) correctly for Streamlit NumberColumn
+    for col in numeric_cols_found:
+        # Intentamos convertir todo lo demás a float, para que Stremalit lo vea como un número
+        if col in df.columns: # Comprobación de seguridad
             df[col] = pd.to_numeric(df[col], errors='coerce').astype(float) 
             
     return df, status_message
@@ -362,12 +364,12 @@ def load_test_results_data():
 
 # --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
-df_atletas, initial_status = load_data() 
-df_calendario_full = load_calendar_data() 
-df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
-df_pruebas_full, tests_status = load_tests_data() 
-df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
-df_perfiles, perfil_status = load_perfil_data() 
+df_atletas, initial_status = load_data()  
+df_calendario_full = load_calendar_data()  
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy()  
+df_pruebas_full, tests_status = load_tests_data()  
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy()  
+df_perfiles, perfil_status = load_perfil_data()  
 df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
 df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
@@ -413,7 +415,7 @@ def login_form():
                 st.session_state['rol'] = rol
                 st.session_state['atleta_nombre'] = atleta_nombre
                 st.success(f"Bienvenido, {atleta_nombre} ({rol})!")
-                st.rerun() 
+                st.rerun()  
             else:
                 st.error("Usuario o Contraseña incorrectos.")
 
@@ -433,11 +435,11 @@ def calcular_porcentaje_rm(rm_value, porcentaje):
 
 # Relación inversa RIR a Porcentaje de 1RM
 RIR_TO_PERCENT = {
-    0: (90, 100), 
-    1: (87, 95), 
-    2: (80, 87), 
-    3: (70, 80), 
-    4: (65, 75), 
+    0: (90, 100),  
+    1: (87, 95),  
+    2: (80, 87),  
+    3: (70, 80),  
+    4: (65, 75),  
 }
 
 def calcular_carga_por_rir(rm_value, rir):
@@ -457,7 +459,7 @@ def descomponer_placas(peso_total, peso_barra):
         return "Barra Sola o Peso Inválido", {}
 
     peso_a_cargar = (peso_total - peso_barra) / 2
-    placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5] 
+    placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5]  
     placas_por_lado = {}
 
     peso_restante = peso_a_cargar
@@ -468,8 +470,8 @@ def descomponer_placas(peso_total, peso_barra):
             if cantidad > 0:
                 placas_por_lado[placa] = cantidad
                 peso_restante -= (cantidad * placa)
-            
-            if peso_restante < 0.1: 
+                
+            if peso_restante < 0.1:  
                 peso_restante = 0
                 break
     
@@ -486,7 +488,7 @@ def save_main_data(df_edited):
 
         # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
         if 'Última_Fecha' in df_edited.columns:
-            df_edited['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce').dt.date
+            df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
         
         # 2. Reordenamiento CLAVE de columnas para dejar 'Última_Fecha' al final
         cols = df_edited.columns.tolist()
@@ -515,15 +517,15 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     try:
         current_df, _ = load_readiness_data()
         if current_df.empty:
-             current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
+            current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
     except Exception:
-          current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
+        current_df = pd.DataFrame(columns=READINESS_REQUIRED_COLUMNS)
 
     new_entry = {
-        'Atleta': atleta, 
-        'Fecha': pd.to_datetime(fecha), 
-        'Sueño': sueno, 
-        'Molestias': molestias, 
+        'Atleta': atleta,  
+        'Fecha': pd.to_datetime(fecha),  
+        'Sueño': sueno,  
+        'Molestias': molestias,  
         'Disposicion': disposicion
     }
     
@@ -533,7 +535,7 @@ def save_readiness_data(atleta, fecha, sueno, molestias, disposicion):
     
     try:
         df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
-        load_readiness_data.clear() 
+        load_readiness_data.clear()  
         return load_readiness_data()[0], True
         
     except Exception as e:
@@ -595,7 +597,7 @@ def save_ranking_data(df_edited):
     
     try:
         df_to_save.to_excel(RANKING_FILE, index=False, engine='openpyxl')
-        load_ranking_data.clear() 
+        load_ranking_data.clear()  
         return True
     except Exception as e:
         st.error(f"Error al guardar el ranking: {e}")
@@ -660,21 +662,19 @@ def highlight_imminent_events(df):
     styles = pd.DataFrame('', index=df.index, columns=df.columns)
     
     # Aplicar estilo: fondo verde claro de 'success'
-    styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;' 
+    styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;'  
     
     return styles
-
-# --- FIN DE FUNCIONES AUXILIARES ---
 
 
 # --- 5. CARGA INICIAL DE DATAFRAMES ---
 
-df_atletas, initial_status = load_data() 
-df_calendario_full = load_calendar_data() 
-df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
-df_pruebas_full, tests_status = load_tests_data() 
-df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
-df_perfiles, perfil_status = load_perfil_data() 
+df_atletas, initial_status = load_data()  
+df_calendario_full = load_calendar_data()  
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy()  
+df_pruebas_full, tests_status = load_tests_data()  
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy()  
+df_perfiles, perfil_status = load_perfil_data()  
 df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
 df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
@@ -717,23 +717,23 @@ if not st.session_state['logged_in']:
     logo_col, spacer_col = st.columns([1, 10])
     with logo_col:
         if logo_img:
-            st.image(logo_img, width=120) 
+            st.image(logo_img, width=120)  
         else:
             st.markdown("## 🏋️")
             
-    st.markdown("---") 
+    st.markdown("---")  
 
-    col1, col2, col3 = st.columns([1, 3, 1]) 
+    col1, col2, col3 = st.columns([1, 3, 1])  
     
-    with col2: 
+    with col2:  
         
         st.markdown(
-            f"<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>", 
+            f"<h1 style='text-align: center; color: #FFA500;'>¡Bienvenido al Gestor de Rendimiento!</h1>",  
             unsafe_allow_html=True
         )
         
         st.markdown(
-            f"<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>", 
+            f"<p style='text-align: center; font-size: 1.2em; color: white;'>Tu plataforma para gestionar marcas personales, calcular cargas y organizar tu calendario deportivo.</p>",  
             unsafe_allow_html=True
         )
         
@@ -747,7 +747,7 @@ if not st.session_state['logged_in']:
 # ----------------------------------------------------------------------
 
 st.title("💪 GESTOR DEPORTIVO - HAPKIDO BETA V1.0")
-logout() 
+logout()  
 
 if st.session_state['logged_in']:
     try:
@@ -765,23 +765,23 @@ atleta_actual = st.session_state['atleta_nombre']
 
 if rol_actual == 'Entrenador':
     tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
-        "📊 Vista Entrenador (Datos)", 
-        "🧮 Calculadora de Carga", 
+        "📊 Vista Entrenador (Datos)",  
+        "🧮 Calculadora de Carga",  
         "🏋️ Pruebas Físicas",
-        "📅 Calendario", 
-        "👤 Perfil", 
-        "🏃 Acondicionamiento", 
+        "📅 Calendario",  
+        "👤 Perfil",  
+        "🏃 Acondicionamiento",  
         "🍎 Nutrición", # NUEVA PESTAÑA UNIFICADA
         "🌡️ Recuperación",
         "🏆 Ranking"
     ])
 else:
     tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB = st.tabs([
-        "🧮 Calculadora de Carga", 
+        "🧮 Calculadora de Carga",  
         "🏋️ Pruebas Físicas",
-        "📅 Calendario", 
-        "👤 Perfil", 
-        "🏃 Acondicionamiento", 
+        "📅 Calendario",  
+        "👤 Perfil",  
+        "🏃 Acondicionamiento",  
         "🍎 Nutrición", # NUEVA PESTAÑA UNIFICADA
         "🌡️ Recuperación",
         "🏆 Ranking"
@@ -823,7 +823,7 @@ if rol_actual == 'Entrenador':
                 load_perfil_data.clear()
                 load_ranking_data.clear()
                 load_test_results_data.clear() # Limpiamos la caché de las pruebas también
-                st.rerun() 
+                st.rerun()  
         with col_recarga_pruebas:
             if st.button("Recargar Calendario/Pruebas Modulares", help="Recarga 'calendario_data.xlsx' y 'pruebas_activas.xlsx'."):
                 load_calendar_data.clear()
@@ -838,10 +838,10 @@ if rol_actual == 'Entrenador':
         
         # 1. Widget de edición para datos principales de atletas
         df_edited_main = st.data_editor(
-            df_editor_main, 
+            df_editor_main,  
             num_rows="dynamic",
             column_config={
-                "ID": st.column_config.NumberColumn("ID", disabled=True), 
+                "ID": st.column_config.NumberColumn("ID", disabled=True),  
                 "Atleta": st.column_config.TextColumn("Atleta", help="Nombre único del atleta y Usuario de Login", required=True),
                 "Contraseña": st.column_config.TextColumn("Contraseña", required=True),
                 "Rol": st.column_config.SelectboxColumn("Rol", options=['Atleta', 'Entrenador']),
@@ -889,7 +889,7 @@ if rol_actual == 'Entrenador':
                     help="Marca para mostrar la prueba en la calculadora.",
                     default=False,
                 ),
-                "ColumnaRM": st.column_config.Column("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en Datos de Atletas (Ej: Biceps_RM)"), 
+                "ColumnaRM": st.column_config.Column("ColumnaRM", help="Debe coincidir EXACTAMENTE con el nombre de columna en Datos de Atletas (Ej: Biceps_RM)"),  
                 "NombrePrueba": st.column_config.Column("NombrePrueba"),
             },
             use_container_width=True,
@@ -905,11 +905,11 @@ if rol_actual == 'Entrenador':
                 st.rerun()
             else:
                 st.error("❌ No se pudieron guardar los cambios.")
-    
+        
 # ----------------------------------------------------------------------------------
 ## PESTAÑA 2: CALCULADORA DE CARGA (Visible para todos)
 # ----------------------------------------------------------------------------------
-calc_tab = tab2 
+calc_tab = tab2  
 
 with calc_tab:
     st.header("🧮 Calculadora de Carga")
@@ -926,7 +926,7 @@ with calc_tab:
     col_ejercicio, col_barra = st.columns([2, 1])
 
     with col_ejercicio:
-        ejercicio_options = df_pruebas['NombrePrueba'].tolist() 
+        ejercicio_options = df_pruebas['NombrePrueba'].tolist()  
         
         if not ejercicio_options:
             st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
@@ -934,7 +934,7 @@ with calc_tab:
         else:
             ejercicio_default = st.selectbox(
                 "Selecciona el Ejercicio:",
-                options=ejercicio_options, 
+                options=ejercicio_options,  
                 key='ejercicio_calc'
             )
             
@@ -945,7 +945,7 @@ with calc_tab:
                 columna_rm = columna_rm_series.iloc[0]
             
             if columna_rm and columna_rm != 'N/A' and columna_rm in datos_usuario and pd.notna(datos_usuario.get(columna_rm)):
-                rm_inicial = float(datos_usuario[columna_rm]) 
+                rm_inicial = float(datos_usuario[columna_rm])  
             
             rm_value = st.number_input(
                 f"RM actual para **{ejercicio_default}** (en kg):",
@@ -1002,10 +1002,10 @@ with calc_tab:
     peso_calculado_rir, perc_sugerido = calcular_carga_por_rir(rm_value, rir_target)
 
     with col_target:
-        st.markdown(" ", unsafe_allow_html=True) 
+        st.markdown(" ", unsafe_allow_html=True)  
         st.metric("Peso Ideal", f"**{peso_calculado_rir} kg**")
         if peso_calculado_rir > 0:
-             st.caption(f"Equivale aprox. al {perc_sugerido:.1f}% de RM")
+            st.caption(f"Equivale aprox. al {perc_sugerido:.1f}% de RM")
 
     # --- Conversión de Placas ---
     st.markdown("---")
@@ -1069,33 +1069,35 @@ with PRUEBAS_TAB:
     st.header("🏋️ Historial y Gestión de Pruebas Físicas")
     st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**.")
 
-    # Identificar columnas numéricas que representan las pruebas
+    # Identificar columnas numéricas que representan las pruebas de forma dinámica
     test_columns = [col for col in df_test_results_full.columns if col not in ['ID', 'Atleta', 'Fecha']]
     
     if rol_actual == 'Entrenador':
         st.subheader("Gestión de Resultados Históricos (Edición Directa)")
-        st.warning("⚠️ **ATENCIÓN**: Puedes añadir nuevas filas y modificar resultados directamente. Las filas vacías se eliminarán al guardar.")
+        st.warning("⚠️ **ATENCIÓN**: Puedes añadir nuevas filas y modificar resultados directamente. Las filas vacías se eliminarán al guardar. Si añades columnas, estas se guardarán.")
         
         df_editor_results = df_test_results_full.copy()
         
+        # Configuramos dinámicamente las columnas para el editor
+        column_config = {
+            "ID": st.column_config.NumberColumn("ID", disabled=True),  
+            "Atleta": st.column_config.TextColumn("Atleta", help="Debe coincidir con el nombre de usuario de Atletas", required=True),
+            "Fecha": st.column_config.DateColumn("Fecha de Prueba", required=True),
+        }
+        
+        # Agregamos las columnas de prueba dinámicamente
+        for col in test_columns:
+            # Intentamos determinar el tipo de columna (Numérico, Texto, etc.)
+            if df_editor_results[col].dtype in ['float64', 'int64']:
+                 column_config[col] = st.column_config.NumberColumn(col, format="%.2f", min_value=0.0)
+            else:
+                 column_config[col] = st.column_config.TextColumn(col)
+        
+        
         df_edited_results = st.data_editor(
-            df_editor_results, 
+            df_editor_results,  
             num_rows="dynamic",
-            column_config={
-                "ID": st.column_config.NumberColumn("ID", disabled=True), 
-                "Atleta": st.column_config.TextColumn("Atleta", help="Debe coincidir con el nombre de usuario de Atletas", required=True),
-                "Fecha": st.column_config.DateColumn("Fecha de Prueba", required=True),
-                # Configuración de las columnas numéricas como números flotantes (decimales)
-                "100m (s)": st.column_config.NumberColumn("100m (s)", format="%.2f", min_value=0.0),
-                "400m (s)": st.column_config.NumberColumn("400m (s)", format="%.2f", min_value=0.0),
-                "5k (min)": st.column_config.NumberColumn("5k (min)", format="%.1f", min_value=0.0),
-                "10km (min)": st.column_config.NumberColumn("10km (min)", format="%.1f", min_value=0.0),
-                "Course Navette (max)": st.column_config.NumberColumn("Course Navette (max)", format="%d", min_value=0),
-                "Salto Largo (cm)": st.column_config.NumberColumn("Salto Largo (cm)", format="%d", min_value=0),
-                "Salto Alto (cm)": st.column_config.NumberColumn("Salto Alto (cm)", format="%d", min_value=0),
-                "Dinamometria Izq (kg)": st.column_config.NumberColumn("Dinamometria Izq (kg)", format="%d", min_value=0),
-                "Dinamometria Der (kg)": st.column_config.NumberColumn("Dinamometria Der (kg)", format="%d", min_value=0),
-            },
+            column_config=column_config,
             use_container_width=True,
             key="test_results_data_editor"
         )
@@ -1111,10 +1113,11 @@ with PRUEBAS_TAB:
         st.markdown("---")
         st.subheader("Análisis de Tendencia (Todos los Atletas)")
         
-        selected_athlete = st.selectbox("Seleccionar Atleta para Análisis de Tendencia:", df_test_results_full['Atleta'].unique(), key='trend_athlete_select_coach')
-        
-        # Lógica de tendencia para el entrenador (misma que el atleta, pero seleccionando el nombre)
-        df_filtered_trend = df_test_results_full[df_test_results_full['Atleta'] == selected_athlete].sort_values(by='Fecha').set_index('Fecha').copy()
+        if df_test_results_full['Atleta'].empty:
+             st.info("No hay atletas para seleccionar.")
+        else:
+            selected_athlete = st.selectbox("Seleccionar Atleta para Análisis de Tendencia:", df_test_results_full['Atleta'].unique(), key='trend_athlete_select_coach')
+            df_filtered_trend = df_test_results_full[df_test_results_full['Atleta'] == selected_athlete].sort_values(by='Fecha').set_index('Fecha').copy()
         
     else: # Vista Atleta
         st.subheader(f"Tus Resultados de Pruebas Físicas Históricas, {atleta_actual}")
@@ -1201,8 +1204,8 @@ with CALENDAR_TAB:
             num_rows="dynamic",
             column_config={
                 "Fecha": st.column_config.DateColumn(
-                    "Fecha", 
-                    format="YYYY-MM-DD", 
+                    "Fecha",  
+                    format="YYYY-MM-DD",  
                     required=True
                 ),
                 "Evento": st.column_config.TextColumn("Evento", required=True),
@@ -1238,7 +1241,7 @@ with CALENDAR_TAB:
         eventos_mostrar['Days_Until'] = eventos_mostrar['Fecha'].apply(get_days_until)
         
         st.dataframe(
-            eventos_mostrar.style.apply(highlight_imminent_events, axis=None), 
+            eventos_mostrar.style.apply(highlight_imminent_events, axis=None),  
             use_container_width=True
         )
         
@@ -1259,7 +1262,7 @@ with PERFIL_TAB:
     
     # Inicialización de datos (CORRECCIÓN DEL NAMEERROR)
     datos_perfil = datos_perfil_series
-    datos_rm = datos_rm_series 
+    datos_rm = datos_rm_series  
     
     # Extracción de valores seguros (USANDO .get() en las series)
     peso_kg = float(datos_rm.get('PesoCorporal', 0)) if pd.notna(datos_rm.get('PesoCorporal')) else 0
@@ -1320,11 +1323,11 @@ with PERFIL_TAB:
         if ratio_sq_bp > 2.2:
             st.warning("⚠️ **Desequilibrio Notable:** El Press Banca es muy bajo en relación con la Sentadilla. Priorizar el empuje del tren superior.")
         elif ratio_sq_bp < 1.3:
-             st.warning("⚠️ **Desequilibrio Notable:** La Sentadilla es muy baja en relación con el Press Banca. Priorizar la cadena posterior y el core.")
+            st.warning("⚠️ **Desequilibrio Notable:** La Sentadilla es muy baja en relación con el Press Banca. Priorizar la cadena posterior y el core.")
         else:
             st.success("✅ **Balance Óptimo:** Ratio Squat:Bench dentro del rango ideal (1.3:1 a 2.2:1).")
     else:
-             st.info("Falta el registro de RM de Sentadilla o Press Banca para calcular el balance.")
+        st.info("Falta el registro de RM de Sentadilla o Press Banca para calcular el balance.")
 
 
     if rol_actual == 'Entrenador':
@@ -1462,14 +1465,14 @@ with NUTRICION_TAB:
     datos_rm_series = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_existe else pd.Series()
     
     datos_perfil = datos_perfil_series
-    datos_rm = datos_rm_series 
+    datos_rm = datos_rm_series  
     
     # Extracción de valores seguros (USANDO .get() en las series)
     # Si la serie está vacía, .get() devuelve None, pd.notna(None) es True, luego usamos el valor 0 o el valor por defecto.
     peso_kg = float(datos_rm.get('PesoCorporal', 0)) if pd.notna(datos_rm.get('PesoCorporal')) else 0
     altura_cm = float(datos_perfil.get('Altura_cm', 0)) if pd.notna(datos_perfil.get('Altura_cm')) else 0
     edad_anos = pd.to_numeric(datos_perfil.get('Edad', 0), errors='coerce', downcast='integer') if pd.notna(datos_perfil.get('Edad')) else 0
-    sexo = datos_perfil.get('Sexo', 'Hombre') 
+    sexo = datos_perfil.get('Sexo', 'Hombre')  
 
 
     # --- SECCIÓN 1: CÁLCULO DE TMB Y OBJETIVOS ---
@@ -1479,27 +1482,27 @@ with NUTRICION_TAB:
     
     with col_peso:
         peso_input = st.number_input(
-            "Peso Corporal (kg):", 
-            min_value=0.0, 
-            value=float(peso_kg) if pd.notna(peso_kg) and peso_kg > 0 else 70.0, 
+            "Peso Corporal (kg):",  
+            min_value=0.0,  
+            value=float(peso_kg) if pd.notna(peso_kg) and peso_kg > 0 else 70.0,  
             step=0.5,
-            key='gestion_peso_input' 
+            key='gestion_peso_input'  
         )
     with col_alt:
         altura_input = st.number_input(
-            "Altura (cm):", 
-            min_value=0.0, 
-            value=float(altura_cm) if pd.notna(altura_cm) and altura_cm > 0 else 175.0, 
+            "Altura (cm):",  
+            min_value=0.0,  
+            value=float(altura_cm) if pd.notna(altura_cm) and altura_cm > 0 else 175.0,  
             step=1.0,
-            key='gestion_altura_input' 
+            key='gestion_altura_input'  
         )
     with col_edad_sexo:
         edad_input = st.number_input(
-            "Edad (años):", 
-            min_value=1, 
-            value=int(edad_anos) if pd.notna(edad_anos) and edad_anos > 0 else 25, 
+            "Edad (años):",  
+            min_value=1,  
+            value=int(edad_anos) if pd.notna(edad_anos) and edad_anos > 0 else 25,  
             step=1,
-            key='gestion_edad_input' 
+            key='gestion_edad_input'  
         )
         sexo_input = st.selectbox("Sexo:", options=['Hombre', 'Mujer'], index=0 if sexo == 'Hombre' else 1, key='gestion_sexo_input')
         
@@ -1509,7 +1512,7 @@ with NUTRICION_TAB:
         
         st.markdown("<br>", unsafe_allow_html=True)
         st.metric(
-            "Tasa Metabólica Basal (TMB)", 
+            "Tasa Metabólica Basal (TMB)",  
             f"**{tmb_calc} kcal/día** (Fórmula de Mifflin-St Jeor)"
         )
 
@@ -1532,7 +1535,7 @@ with NUTRICION_TAB:
                 options=list(act_factors.keys()),
                 key='gestion_act_input'
             )
-            factor_actividad = act_factors[factor_label] 
+            factor_actividad = act_factors[factor_label]  
 
         obj_factors = {
             "Mantenimiento": 0,
@@ -1548,7 +1551,7 @@ with NUTRICION_TAB:
             )
             objetivo_calorico = obj_factors[objetivo_label]
             
-        get_calc = round(tmb_calc * factor_actividad) 
+        get_calc = round(tmb_calc * factor_actividad)  
         calorias_objetivo = get_calc + objetivo_calorico
 
         st.metric(
@@ -1563,7 +1566,7 @@ with NUTRICION_TAB:
         st.markdown("---")
         st.subheader("3. Hidratación Sugerida 💧")
         
-        agua_litros = round(peso_input * 0.035, 1) 
+        agua_litros = round(peso_input * 0.035, 1)  
         
         st.metric(
             "Agua Sugerida",
@@ -1618,8 +1621,8 @@ with RECUPERACION_TAB:
     
     # Incrusta el formulario de Google Forms
     components.iframe(
-        GOOGLE_FORM_EMBED_URL, 
-        height=700, 
+        GOOGLE_FORM_EMBED_URL,  
+        height=700,  
         scrolling=True
     )
     
@@ -1669,7 +1672,7 @@ with RANKING_TAB:
     # --- Lógica de Podio Visual (TOP 3) ---
     if not df_ranking.empty:
         st.markdown("---")
-        st.subheader("🥇 Top 3 Ranking Distrital") 
+        st.subheader("🥇 Top 3 Ranking Distrital")  
 
         df_top3 = df_ranking.head(3).copy()
         
@@ -1681,13 +1684,13 @@ with RANKING_TAB:
 
         # POSICIÓN 2 (Plata)
         with col2:
-            st.markdown("<br><br>", unsafe_allow_html=True) 
+            st.markdown("<br><br>", unsafe_allow_html=True)  
             if pos_2 is not None:
                 st.info(f"**🥈 {pos_2['Atleta']}**")
-                st.markdown(f"<h2 style='text-align: center; color: silver;'>2do Puesto</h2>", unsafe_allow_html=True) 
+                st.markdown(f"<h2 style='text-align: center; color: silver;'>2do Puesto</h2>", unsafe_allow_html=True)  
                 
             else:
-                 st.info("🥈 ---")
+                st.info("🥈 ---")
 
         # POSICIÓN 1 (Oro)
         with col1:
@@ -1695,16 +1698,16 @@ with RANKING_TAB:
                 st.success(f"**🥇 {pos_1['Atleta']}**")
                 st.markdown(f"<h1 style='text-align: center; color: gold;'>1er Puesto</h1>", unsafe_allow_html=True)
             else:
-                 st.success("🥇 ---")
+                st.success("🥇 ---")
 
         # POSICIÓN 3 (Bronce)
         with col3:
-            st.markdown("<br><br><br>", unsafe_allow_html=True) 
+            st.markdown("<br><br><br>", unsafe_allow_html=True)  
             if pos_3 is not None:
-                st.error(f"**🥉 {pos_3['Atleta']}**") 
-                st.markdown(f"<h3 style='text-align: center; color: brown;'>3er Puesto</h3>", unsafe_allow_html=True) 
+                st.error(f"**🥉 {pos_3['Atleta']}**")  
+                st.markdown(f"<h3 style='text-align: center; color: brown;'>3er Puesto</h3>", unsafe_allow_html=True)  
             else:
-                 st.error("🥉 ---")
+                st.error("🥉 ---")
         
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1748,7 +1751,7 @@ with RANKING_TAB:
         cols_to_show = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
         
         st.dataframe(
-            df_ranking[cols_to_show], 
+            df_ranking[cols_to_show],  
             use_container_width=True,
             column_config={
                 "Posicion": st.column_config.NumberColumn("Posición", format="%d"),
@@ -1758,7 +1761,7 @@ with RANKING_TAB:
             },
             height=35 * (len(df_ranking) + 1)
         )
-
+        
         # Mostrar la posición del atleta actual de forma destacada
         current_athlete_rank = df_ranking[df_ranking['Atleta'] == atleta_actual]
         if not current_athlete_rank.empty:
@@ -1772,5 +1775,3 @@ with RANKING_TAB:
             
             medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
             col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
-
-
