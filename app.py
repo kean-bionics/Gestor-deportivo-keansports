@@ -775,11 +775,12 @@ def simulate_delay_and_go():
         st.rerun() # Forzar el cambio a VERDE
 
 def update_reaction_state():
-    """Lógica para avanzar el ciclo del juego con la interacción del usuario (SIGUIENTE INTENTO)."""
+    """Lógica para avanzar el ciclo del juego con la interacción del usuario (AVANZAR PASO/SIGUIENTE INTENTO)."""
     current_state = st.session_state.get('reaction_state')
     
     if current_state == 'ROJO':
-        # Esta lógica no debería ser llamada en ROJO en el flujo automático
+        # ROJO -> VERDE (Estímulo GO)
+        # Esta lógica no debería ser llamada por el usuario en el flujo automático (es simulate_delay_and_go)
         pass
 
     elif current_state == 'VERDE':
@@ -1040,9 +1041,15 @@ if st.session_state['logged_in']:
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
         st.session_state['active_tab'] = tab_names[0] 
 
+    # Encontramos el índice para la selección inicial
+    try:
+        active_index = tab_names.index(st.session_state['active_tab'])
+    except ValueError:
+        active_index = 0
+        st.session_state['active_tab'] = tab_names[0] # Reiniciar si hay error
+
     # Creamos las pestañas usando la sintaxis correcta
-    # Nota: Usamos la función st.tabs(options, default_value)
-    tabs = st.tabs(tab_names, st.session_state['active_tab'])
+    tabs = st.tabs(tab_names, tab_names[active_index]) # Sintaxis: st.tabs(opciones, default_value)
 
     # Asignar nombres a las pestañas para el código (esto depende del rol)
     if rol_actual == 'Entrenador':
