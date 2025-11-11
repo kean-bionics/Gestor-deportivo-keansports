@@ -721,7 +721,6 @@ def end_session_click():
     st.session_state['last_time_ms'] = '---'
     st.session_state['max_tests_reaction'] = 10 
     
-    # Mantenemos la pestaña activa
     st.session_state['active_tab'] = '⚡ ReactionLab'
 
 def start_reaction_test():
@@ -759,7 +758,7 @@ def start_reaction_test():
 def simulate_delay_and_go():
     """
     Simula el retardo aleatorio y pasa a VERDE automáticamente.
-    (Usamos time.sleep(), que congelará la UI, pero es el método más fiel al juego original).
+    (Usamos time.sleep(), que congelará la UI, pero es el método más fiable al flujo original).
     """
     if st.session_state.get('is_playing_reaction') and st.session_state['reaction_state'] == 'ROJO':
         
@@ -780,7 +779,7 @@ def update_reaction_state():
     current_state = st.session_state.get('reaction_state')
     
     if current_state == 'ROJO':
-        # Esta función no debería ser llamada en ROJO en el flujo automático
+        # Esta lógica no debería ser llamada en ROJO en el flujo automático
         pass
 
     elif current_state == 'VERDE':
@@ -866,7 +865,7 @@ def show_reaction_lab(atleta_actual):
         st.markdown(color_container_html, unsafe_allow_html=True)
         
         # --- LÓGICA DE ACTIVACIÓN DE DELAY ---
-        # Si estamos en ROJO y JUGANDO, activamos el delay simulado.
+        # Si estamos en ROJO y JUGANDO, llamamos al simulador para que inicie la pausa y transicione a VERDE
         if st.session_state.get('is_playing_reaction') and current_state == 'ROJO':
              # Usamos sleep para forzar una pausa real antes de VERDE, simulando el delay aleatorio
              delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
@@ -970,6 +969,7 @@ st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 # Inicializar el estado de la sesión
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+    st.session_state['active_tab'] = 'none'
 
 # ----------------------------------------------------------------------
 # --- PANTALLA DE ACCESO/BIENVENIDA ---
@@ -1035,20 +1035,14 @@ if st.session_state['logged_in']:
     else:
         tab_names = ["🧮 Calculadora de Carga", "🏋️ Pruebas Físicas", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🍎 Nutrición", "🌡️ Recuperación", "🏆 Ranking", "⚡ ReactionLab"]
 
-    # --- LÓGICA DE PERSISTENCIA DE PESTAÑA (CORRECCIÓN) ---
-    # Si la pestaña activa no está en la sesión o no es válida, usamos la primera (o la que se desee)
+    # --- LÓGICA DE PERSISTENCIA DE PESTAÑA (CORRECCIÓN FINAL) ---
+    # Si la pestaña activa no está en la sesión o no es válida, usamos la primera.
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
         st.session_state['active_tab'] = tab_names[0] 
 
-    # Encontramos el índice para la selección inicial
-    try:
-        active_index = tab_names.index(st.session_state['active_tab'])
-    except ValueError:
-        active_index = 0
-        st.session_state['active_tab'] = tab_names[0] # Reiniciar si hay error
-
-    # Creamos las pestañas usando el argumento con nombre 'active_tab'
-    tabs = st.tabs(tab_names, active_tab=tab_names[active_index]) # CORRECCIÓN: Usamos el nombre como índice
+    # Creamos las pestañas usando la sintaxis correcta
+    # Nota: Usamos la función st.tabs(options, default_value)
+    tabs = st.tabs(tab_names, st.session_state['active_tab'])
 
     # Asignar nombres a las pestañas para el código (esto depende del rol)
     if rol_actual == 'Entrenador':
@@ -1624,7 +1618,7 @@ if st.session_state['logged_in']:
         st.session_state['active_tab'] = '🏃 Acondicionamiento'
         st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
         
-        datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
+        datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else pd.Series()
         
         if not datos_perfil.empty:
             edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
