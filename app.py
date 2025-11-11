@@ -721,6 +721,7 @@ def end_session_click():
     st.session_state['last_time_ms'] = '---'
     st.session_state['max_tests_reaction'] = 10 
     
+    # Mantenemos la pestaña activa
     st.session_state['active_tab'] = '⚡ ReactionLab'
 
 def start_reaction_test():
@@ -758,7 +759,7 @@ def start_reaction_test():
 def simulate_delay_and_go():
     """
     Simula el retardo aleatorio y pasa a VERDE automáticamente.
-    Esto se debe llamar DESPUÉS del botón 'INICIAR' en el flujo de la aplicación.
+    (Usamos time.sleep(), que congelará la UI, pero es el método más fiel al juego original).
     """
     if st.session_state.get('is_playing_reaction') and st.session_state['reaction_state'] == 'ROJO':
         
@@ -775,16 +776,15 @@ def simulate_delay_and_go():
         st.rerun() # Forzar el cambio a VERDE
 
 def update_reaction_state():
-    """Lógica para avanzar el ciclo del juego con la interacción del usuario (AVANZAR PASO/SIGUIENTE INTENTO)."""
+    """Lógica para avanzar el ciclo del juego con la interacción del usuario (SIGUIENTE INTENTO)."""
     current_state = st.session_state.get('reaction_state')
     
     if current_state == 'ROJO':
-        # ROJO -> VERDE (Estímulo GO)
-        st.session_state['reaction_state'] = 'VERDE'
-        st.session_state['reaction_start_time'] = time.time() # Iniciar cronómetro de reacción
-        
+        # Esta función no debería ser llamada en ROJO en el flujo automático
+        pass
+
     elif current_state == 'VERDE':
-        # VERDE -> FALLO (Timeout simulado: Presionó 'Avanzar' sin reaccionar)
+        # VERDE -> FALLO (Timeout simulado: Presionó 'Siguiente' sin reaccionar)
         st.session_state['reaction_state'] = 'FALLO_TIEMPO'
         st.session_state['misses'] += 1
         st.session_state['test_count'] += 1
@@ -866,7 +866,7 @@ def show_reaction_lab(atleta_actual):
         st.markdown(color_container_html, unsafe_allow_html=True)
         
         # --- LÓGICA DE ACTIVACIÓN DE DELAY ---
-        # Si estamos en ROJO y JUGANDO, llamamos al simulador para que inicie la pausa y transicione a VERDE
+        # Si estamos en ROJO y JUGANDO, activamos el delay simulado.
         if st.session_state.get('is_playing_reaction') and current_state == 'ROJO':
              # Usamos sleep para forzar una pausa real antes de VERDE, simulando el delay aleatorio
              delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
@@ -902,7 +902,7 @@ def show_reaction_lab(atleta_actual):
         # Botón SIGUIENTE INTENTO (Necesario después de HIT/FALLO)
         is_advancing_disabled = not is_playing or current_state not in ['HIT', 'FALLO_TIEMPO', 'FALSO_INICIO']
 
-        st.button("SIGUIENTE INTENTO", on_on_click=update_reaction_state, 
+        st.button("SIGUIENTE INTENTO", on_click=update_reaction_state, 
                   type="secondary", 
                   disabled=is_advancing_disabled,
                   help="Avanza a la fase de espera del siguiente intento después de un resultado.")
@@ -1036,17 +1036,20 @@ if st.session_state['logged_in']:
         tab_names = ["🧮 Calculadora de Carga", "🏋️ Pruebas Físicas", "📅 Calendario", "👤 Perfil", "🏃 Acondicionamiento", "🍎 Nutrición", "🌡️ Recuperación", "🏆 Ranking", "⚡ ReactionLab"]
 
     # --- LÓGICA DE PERSISTENCIA DE PESTAÑA (CORRECCIÓN) ---
+    # Si la pestaña activa no está en la sesión o no es válida, usamos la primera (o la que se desee)
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
         st.session_state['active_tab'] = tab_names[0] 
 
-    # Creamos las pestañas y seleccionamos la activa usando el index()
+    # Encontramos el índice para la selección inicial
     try:
         active_index = tab_names.index(st.session_state['active_tab'])
     except ValueError:
         active_index = 0
+        st.session_state['active_tab'] = tab_names[0] # Reiniciar si hay error
 
-    tabs = st.tabs(tab_names, active_index) # Usamos active_index para seleccionar la pestaña
-    
+    # Creamos las pestañas usando el argumento con nombre 'active_tab'
+    tabs = st.tabs(tab_names, active_tab=tab_names[active_index]) # CORRECCIÓN: Usamos el nombre como índice
+
     # Asignar nombres a las pestañas para el código (esto depende del rol)
     if rol_actual == 'Entrenador':
         tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = tabs
@@ -1057,7 +1060,6 @@ if st.session_state['logged_in']:
     ## PESTAÑA DE REACCIÓN (ReactionLab)
     # ----------------------------------------------------------------------------------
     with REACTION_TAB:
-        # Guardamos la pestaña activa en la sesión cada vez que cargamos el contenido
         st.session_state['active_tab'] = '⚡ ReactionLab'
         show_reaction_lab(atleta_actual)
 
