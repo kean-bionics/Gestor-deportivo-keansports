@@ -6,14 +6,14 @@ import io
 from PIL import Image
 from datetime import datetime, timedelta, time
 # Importar la librería para Bases de Datos SQLite
-import sqlite3 # <--- ¡CLAVE!
+import sqlite3 
 import streamlit.components.v1 as components 
 
 
 # ----------------------------------------------------------------------------------
 # --- CONFIGURACIÓN DE BASE DE DATOS (REEMPLAZA TODOS LOS ARCHIVOS .XLSX) ---
 
-DB_FILE = 'keansports.db' # <--- Archivo Único de Base de Datos
+DB_FILE = 'keansports.db' # Archivo Único de Base de Datos
 
 def get_db_connection():
     """Conecta o crea el archivo de Base de Datos SQLite."""
@@ -93,7 +93,7 @@ def create_initial_tables():
     conn.close()
 
 # Llamar a la función al inicio de la aplicación para crear las tablas si no existen
-create_initial_tables() # 
+create_initial_tables() 
 
 # ----------------------------------------------------------------------------------
 
@@ -109,7 +109,6 @@ GOOGLE_FORM_EMBED_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdB4IZero1avUJ
 
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
-    # ... (código de cálculo mantenido) ...
     if peso_kg <= 0 or altura_cm <= 0 or edad_anos <= 0:
         return 0
     if sexo == 'Hombre':
@@ -120,7 +119,6 @@ def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
 
 def calculate_and_sort_ranking(df):
     """Calcula los puntos y ordena el ranking por jerarquía de medallas."""
-    # ... (código de cálculo mantenido) ...
     for col in ['Oros', 'Platas', 'Bronces']:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
             
@@ -177,6 +175,11 @@ def load_data():
     # Limpieza de datos
     if 'Última_Fecha' in df.columns:
         df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce') 
+
+    # --- CORRECCIÓN CLAVE PARA EL LOGIN ---
+    if 'Contraseña' in df.columns:
+        df['Contraseña'] = df['Contraseña'].astype(str).str.strip() 
+    # -------------------------------------
 
     if 'Nueva_Prueba' in df.columns:
         df = df.drop(columns=['Nueva_Prueba'])
@@ -539,7 +542,7 @@ def save_ranking_data(df_edited):
         df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS]
         
         # Guardar en la Base de Datos
-        df_to_save.to_sql('ranking', conn, if_exists='replace', index=False)
+        df_to_sql(df_to_save, 'ranking', conn, if_exists='replace', index=False)
         load_ranking_data.clear()  
         
         conn.close()
@@ -589,13 +592,13 @@ def check_login(username, password):
     user_row = df_atletas[df_atletas['Atleta'].str.lower() == username.lower()]
     
     if not user_row.empty:
+        # Nota: La columna Contraseña ya es string gracias a la corrección en load_data()
         if user_row['Contraseña'].iloc[0] == password:
             return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
     return False, None, None
 
 def login_form():
     """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
-    # (Tu código de login_form)
     with st.form("login_form"):
         username = st.text_input("Usuario (Nombre del Atleta)")
         password = st.text_input("Contraseña", type="password")
@@ -1774,5 +1777,76 @@ with RANKING_TAB:
             medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
             col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
 
+
+# ---------------------------------------------------------------------------------------------------------
+# ----------------------------- BLOQUE TEMPORAL DE MIGRACIÓN (USAR Y BORRAR) --------------------------------
+# ---------------------------------------------------------------------------------------------------------
+
+def migrar_excel_a_bd(nombre_archivo_excel, nombre_tabla_destino):
+    """
+    Función TEMPORAL que lee un Excel y guarda sus datos en la Base de Datos (BD) SQLite.
+    """
+    try:
+        df_excel = pd.read_excel(nombre_archivo_excel, engine='openpyxl')
+        df_excel.columns = df_excel.columns.str.strip() 
+
+        conn = get_db_connection()
+        
+        # Limpieza de fechas antes de migrar (para que SQLite las guarde como texto YYYY-MM-DD)
+        if 'Fecha' in df_excel.columns or 'Última_Fecha' in df_excel.columns:
+            date_col = 'Fecha' if 'Fecha' in df_excel.columns else ('Última_Fecha' if 'Última_Fecha' in df_excel.columns else None)
+            if date_col:
+                df_excel[date_col] = pd.to_datetime(df_excel[date_col], errors='coerce').dt.strftime('%Y-%m-%d')
+        
+        # Guarda y reemplaza toda la tabla con la data del Excel
+        df_excel.to_sql(nombre_tabla_destino, conn, if_exists='replace', index=False)
+        
+        conn.close()
+        return f"✅ ¡Éxito! Datos de '{nombre_archivo_excel}' migrados a la tabla '{nombre_tabla_destino}'."
+
+    except FileNotFoundError:
+        return f"⚠️ Error: No se encontró el archivo '{nombre_archivo_excel}'. Verifica el nombre y la carpeta."
+    except Exception as e:
+        return f"❌ Ocurrió un error en la migración de '{nombre_archivo_excel}': {e}"
+
+
+# --- CÓDIGO DE EJECUCIÓN (Corre una vez y se llena el keansports.db) ---
+
+if __name__ == '__main__':
+    # Este bloque solo se ejecuta si corres el script directamente (ej: python app.py)
+    # y no cuando Streamlit lo ejecuta. Esto es intencional para la migración.
+    
+    if st._is_running_with_streamlit:
+        # Si Streamlit está corriendo, no ejecutamos la migración automática
+        pass
+    else:
+        # Bloque de Migración de Excel a DB
+        print("\n--- INICIANDO MIGRACIÓN DE EXCEL A BASE DE DATOS ---")
+        
+        create_initial_tables() # Aseguramos que la estructura de tablas exista
+
+        # 1. Atletas y Login
+        print(migrar_excel_a_bd('atletas_data.xlsx', 'atletas_data'))
+
+        # 2. Calendario
+        print(migrar_excel_a_bd('calendario_data.xlsx', 'calendario_data'))
+
+        # 3. Pruebas Activas
+        print(migrar_excel_a_bd('pruebas_activas.xlsx', 'pruebas_activas'))
+
+        # 4. Perfiles
+        print(migrar_excel_a_bd('perfiles.xlsx', 'perfiles'))
+
+        # 5. Ranking
+        print(migrar_excel_a_bd('ranking.xlsx', 'ranking'))
+
+        # 6. Readiness
+        print(migrar_excel_a_bd('readiness_data.xlsx', 'readiness_data'))
+
+        # 7. Resultados de Pruebas Físicas
+        print(migrar_excel_a_bd('test_results.xlsx', 'test_results'))
+
+        print("--- MIGRACIÓN DE BASE DE DATOS FINALIZADA. ARCHIVO keansports.db CREADO. ---\n")
+        print("➡️ PRÓXIMO PASO: BORRA TODO ESTE BLOQUE TEMPORAL ANTES DE SUBIR A GITHUB.")
 
 # ---------------------------------------------------------------------------------------------------------
