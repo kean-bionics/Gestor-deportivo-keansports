@@ -8,11 +8,10 @@ from datetime import datetime, timedelta, time
 import streamlit.components.v1 as components 
 import time
 import random
-import threading 
 
 # --- CONSTANTES DE JUEGO ---
 MODO_RV = "Reacción Rojo a Verde"
-REACTION_RECORDS_FILE = 'reaction_records.xlsx' # Nuevo archivo para los registros de reacción
+REACTION_RECORDS_FILE = 'reaction_records.xlsx' # Archivo para los registros de reacción
 # ---------------------------
 
 # --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS Y FUNCIONES DE CÁLCULO ---
@@ -694,116 +693,107 @@ def highlight_imminent_events(df):
     
     return styles
 
-# --- FUNCIÓN CENTRAL DE JUEGO (ReactionLab) ---
+# --- FUNCIONES DE CONTROL DE JUEGO (ReactionLab) ---
 
-def start_reaction_test(container):
-    """
-    Inicia el ciclo de entrenamiento de reacción Rojo a Verde.
-    Usa un hilo para la espera y st.session_state para la gestión de la sesión.
-    """
-    if st.session_state.get('is_playing_reaction'):
-        # Lógica para PARAR la sesión
-        st.session_state['is_playing_reaction'] = False
-        st.session_state['reaction_state'] = 'INICIO'
-        st.rerun()
-        return
+def end_session_click():
+    """Función para el botón PARAR SESIÓN (o INICIAR/FINALIZAR)."""
+    
+    # Si estaba jugando, guardamos los resultados antes de resetear
+    if st.session_state.get('is_playing_reaction') and st.session_state.get('reaction_times_ms') and st.session_state['avg_time_display'] != '---':
+         avg_time_float = float(st.session_state['avg_time_display'])
+         save_reaction_record(
+            st.session_state['atleta_nombre'],
+            MODO_RV,
+            avg_time_float,
+            st.session_state.get('hits', 0),
+            st.session_state.get('max_tests_reaction', 10)
+         )
 
-    # 1. Inicialización de la sesión
-    st.session_state['is_playing_reaction'] = True
-    st.session_state['reaction_state'] = 'ESPERA' # Rojo
-    st.session_state['reaction_start_time'] = None
-    st.session_state['reaction_times_ms'] = []
+    # Resetea el estado para volver a INICIO
+    st.session_state['is_playing_reaction'] = False
+    st.session_state['reaction_state'] = 'INICIO'
     st.session_state['test_count'] = 0
-    st.session_state['max_tests_reaction'] = 10 
+    st.session_state['reaction_times_ms'] = []
+    st.session_state['avg_time_display'] = '---'
     st.session_state['misses'] = 0
     st.session_state['hits'] = 0
-    st.session_state['min_delay'] = 1.0
-    st.session_state['max_delay'] = 4.0
-    st.session_state['avg_time_display'] = '---'
     st.session_state['last_time_ms'] = '---'
-    st.session_state['reaction_cycle_active'] = True # Control del hilo
-
-    # 2. Función del ciclo de juego (se ejecuta en un hilo)
-    def game_cycle_thread():
-        time.sleep(0.5) # Pausa inicial
-        
-        while st.session_state.get('is_playing_reaction') and st.session_state['test_count'] < st.session_state['max_tests_reaction']:
-            
-            # a) ESTADO ROJO (Espera)
-            delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
-            st.session_state['reaction_state'] = 'ROJO'
-            st.session_state['reaction_cycle_active'] = True # Activa el ciclo de espera
-            
-            # Forzamos un re-run para actualizar la UI a ROJO y el botón a PARAR
-            st.rerun() 
-            
-            time.sleep(delay)
-
-            if not st.session_state.get('is_playing_reaction'):
-                break
-
-            # b) ESTADO VERDE (GO!)
-            st.session_state['reaction_state'] = 'VERDE'
-            st.session_state['reaction_start_time'] = time.time()
-            st.session_state['reaction_cycle_active'] = False # Desactiva el ciclo de espera
-            
-            # Forzamos re-run para actualizar la UI a VERDE
-            st.rerun() 
-            
-            time.sleep(2) # Tiempo máximo de reacción (2 segundos)
-            
-            # c) Manejar FALLO por tiempo excedido
-            if st.session_state['reaction_state'] == 'VERDE':
-                st.session_state['reaction_state'] = 'FALLO_TIEMPO'
-                st.session_state['misses'] += 1
-                st.session_state['last_time_ms'] = "LENTO"
-                st.session_state['test_count'] += 1
-                st.rerun()
-                time.sleep(1) # Pequeña pausa para ver el fallo
-        
-        # Si salimos del ciclo y no fue por PARAR (is_playing=False), terminamos la sesión
-        if st.session_state['test_count'] >= st.session_state['max_tests_reaction']:
-            st.session_state['is_playing_reaction'] = False
-            
-            if st.session_state['reaction_state'] != 'FINALIZADO':
-                 st.session_state['reaction_state'] = 'FINALIZADO'
-                 st.rerun()
-
-    # 3. Lanzar el hilo del juego (esto permite que la UI de Streamlit siga respondiendo)
-    threading.Thread(target=game_cycle_thread).start()
-
-def handle_reaction(key):
-    """Maneja la pulsación de la tecla 'SPACE' del usuario (simulada por el botón REACCIÓN)."""
+    st.session_state['max_tests_reaction'] = 10 
     
+    # Nota: No se usa st.rerun() aquí, Streamlit se recarga por la acción del botón
+
+def start_reaction_test():
+    """Inicializa la sesión y comienza el primer intento (ROJO)."""
+    # 1. Inicialización de la sesión
+    st.session_state['is_playing_reaction'] = True
+    st.session_state['reaction_state'] = 'ROJO' # Comienza el primer intento en ROJO (Espera)
+    st.session_state['reaction_start_time'] = time.time()
+    st.session_state['reaction_times_ms'] = []
+    st.session_state['test_count'] = 0
+    st.session_state['misses'] = 0
+    st.session_state['hits'] = 0
+    st.session_state['last_time_ms'] = '---'
+    st.session_state['avg_time_display'] = '---'
+    st.session_state['max_tests_reaction'] = 10 
+    
+    # Forzar recarga para actualizar la UI a ROJO
+    st.rerun()
+
+def update_reaction_state():
+    """Lógica para avanzar el ciclo del juego con la interacción del usuario (AVANZAR PASO)."""
+    current_state = st.session_state.get('reaction_state')
+    
+    if current_state == 'ROJO':
+        # ROJO -> VERDE (Estímulo GO)
+        st.session_state['reaction_state'] = 'VERDE'
+        st.session_state['reaction_start_time'] = time.time() # Iniciar cronómetro de reacción
+        
+    elif current_state == 'VERDE':
+        # VERDE -> FALLO (Timeout simulado: Presionó 'Avanzar' sin reaccionar)
+        st.session_state['reaction_state'] = 'FALLO_TIEMPO'
+        st.session_state['misses'] += 1
+        st.session_state['test_count'] += 1
+        st.session_state['last_time_ms'] = "LENTO"
+        st.session_state['is_playing_reaction'] = False # Finaliza por lentitud
+
+    elif current_state in ['HIT', 'FALLO_TIEMPO', 'FALSO_INICIO']:
+        # HIT/FALLO -> ROJO (Pasar al siguiente intento)
+        
+        if st.session_state['test_count'] >= st.session_state.get('max_tests_reaction', 10):
+            st.session_state['is_playing_reaction'] = False
+            st.session_state['reaction_state'] = 'FINALIZADO'
+        else:
+            st.session_state['reaction_state'] = 'ROJO'
+            st.session_state['reaction_start_time'] = time.time() # Reiniciar el timer de inicio
+
+    st.rerun() # Forzar recarga para actualizar la UI
+
+def handle_reaction_click():
+    """Maneja el clic en el botón 'REACCIÓN' (simulando la BARRA ESPACIADORA)."""
     current_state = st.session_state.get('reaction_state')
     
     if current_state == 'VERDE':
-        
+        # ACIERTO
         reaction_time = (time.time() - st.session_state['reaction_start_time']) * 1000
         
         st.session_state['reaction_state'] = 'HIT'
         st.session_state['reaction_times_ms'].append(reaction_time)
         st.session_state['hits'] += 1
-        st.session_state['last_time_ms'] = reaction_time
         st.session_state['test_count'] += 1
+        st.session_state['last_time_ms'] = reaction_time
         
-        # Calcular promedio para mostrarlo en vivo
+        # Calcular promedio
         avg = sum(st.session_state['reaction_times_ms']) / len(st.session_state['reaction_times_ms'])
         st.session_state['avg_time_display'] = f"{avg:.2f}"
-
-        # No guardamos aquí, solo en FINALIZADO
-        
-        # Forzar recarga para mostrar resultado inmediato y pasar al siguiente ciclo
-        st.rerun()
         
     elif current_state == 'ROJO':
         # FALSO INICIO
         st.session_state['reaction_state'] = 'FALSO_INICIO'
         st.session_state['misses'] += 1
-        st.session_state['last_time_ms'] = "FALSO"
         st.session_state['test_count'] += 1 
         st.session_state['is_playing_reaction'] = False # Parar la sesión por falso inicio
-        st.rerun()
+
+    st.rerun() # Forzar recarga para actualizar el estado inmediatamente (HIT/FALLO)
 
 def show_reaction_lab(atleta_actual):
     """Define el contenido y la lógica de la pestaña ReactionLab."""
@@ -811,71 +801,66 @@ def show_reaction_lab(atleta_actual):
     
     # --- Inicializar estado si no existe ---
     if 'is_playing_reaction' not in st.session_state:
-        st.session_state['is_playing_reaction'] = False
-        st.session_state['reaction_state'] = 'INICIO'
-        st.session_state['test_count'] = 0
-        st.session_state['reaction_times_ms'] = []
-        st.session_state['avg_time_display'] = '---'
-        st.session_state['misses'] = 0
-        st.session_state['hits'] = 0
-        st.session_state['min_delay'] = 1.0
-        st.session_state['max_delay'] = 4.0
-        st.session_state['max_tests_reaction'] = 10 
-        st.session_state['last_time_ms'] = '---' 
+        end_session_click() # Inicializa con estado 'INICIO'
 
     col_game, col_stats = st.columns([3, 1])
 
     # --- Área de Juego (Izquierda) ---
     with col_game:
-        
         st.subheader("Simulación de Estímulo (Presiona el botón de Reacción)")
-        # Contenedor para el círculo de color
-        color_container = st.empty()
         
-        # Mapeo de estados a colores y textos
         current_state = st.session_state['reaction_state']
         
-        if current_state == 'INICIO':
-            color_container.markdown(f"<div style='background-color: black; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>PRESIONA INICIAR</h1><p style='color: white;'>Modo: Rojo a Verde</p></div>", unsafe_allow_html=True)
-        elif current_state == 'ROJO':
-            color_container.markdown("<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>ESPERA</h1></div>", unsafe_allow_html=True)
+        # Mapeo de HTML según el estado (para el 'círculo')
+        if current_state == 'ROJO':
+             color_container_html = "<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>ESPERA MANUAL</h1><p style='color: white;'>Presiona 'AVANZAR PASO' cuando quieras el estímulo.</p></div>"
         elif current_state == 'VERDE':
-            color_container.markdown("<div style='background-color: green; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: black;'>¡GO!</h1></div>", unsafe_allow_html=True)
+             color_container_html = "<div style='background-color: green; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: black;'>¡GO!</h1><p style='color: black;'>¡REACCIONA AHORA!</p></div>"
         elif current_state == 'HIT':
-            color_container.markdown(f"<div style='background-color: green; padding: 100px; border-radius: 10px; text-align: center;'><h2 style='color: black;'>¡ACIERTO!</h2><h3 style='color: black;'>{st.session_state['last_time_ms']:.2f} ms</h3></div>", unsafe_allow_html=True)
-            # El HIT vuelve a ROJO en el hilo, el re-run solo asegura la visualización
-        elif current_state == 'FALLO_TIEMPO':
-            color_container.markdown("<div style='background-color: orange; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>¡LENTO!</h1><p style='color: white;'>Tiempo excedido</p></div>", unsafe_allow_html=True)
-        elif current_state == 'FALSO_INICIO':
-            color_container.markdown("<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>FALSO INICIO</h1></div>", unsafe_allow_html=True)
-        elif current_state == 'FINALIZADO':
-             color_container.markdown(f"<div style='background-color: black; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: cyan;'>SESIÓN TERMINADA</h1><p style='color: white;'>Promedio: {st.session_state['avg_time_display']} ms</p></div>", unsafe_allow_html=True)
-             
-        
+             color_container_html = f"<div style='background-color: green; padding: 100px; border-radius: 10px; text-align: center;'><h2 style='color: black;'>¡ACIERTO!</h2><h3 style='color: black;'>{st.session_state['last_time_ms']:.2f} ms</h3></div>"
+        elif current_state in ['FALLO_TIEMPO', 'FALSO_INICIO']:
+             color_container_html = f"<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>¡FALLO!</h1><p style='color: white;'>{('FALSO INICIO' if current_state == 'FALSO_INICIO' else 'MUY LENTO')}</p></div>"
+        else:
+            # INICIO/FINALIZADO
+            avg_disp = st.session_state.get('avg_time_display', '---')
+            color_container_html = f"<div style='background-color: black; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>{('SESIÓN TERMINADA' if current_state == 'FINALIZADO' else 'PRESIONA INICIAR')}</h1><p style='color: white;'>Promedio: {avg_disp} ms</p></div>"
+            
+        st.markdown(color_container_html, unsafe_allow_html=True)
+
     # --- Panel de Stats (Derecha) ---
     with col_stats:
         
-        st.markdown("### Control")
+        st.markdown("### Control de Juego")
         
-        # Botón INICIAR/PARAR (Corrección de sintaxis)
-        btn_text = "PARAR SESIÓN" if st.session_state.get('is_playing_reaction') else "INICIAR SESIÓN"
+        is_playing = st.session_state.get('is_playing_reaction')
+        current_state = st.session_state['reaction_state'] # Recargamos el estado
+        btn_text = "PARAR SESIÓN" if is_playing else "INICIAR SESIÓN"
         
-        # El botón de INICIAR/PARAR inicia/detiene el hilo del juego.
-        st.button(btn_text, on_click=start_reaction_test, args=(color_container,), 
-                  type="primary" if not st.session_state.get('is_playing_reaction') else "secondary", 
+        # Botón INICIAR/PARAR
+        st.button(btn_text, on_click=end_session_click if is_playing else start_reaction_test, 
+                  type="primary" if not is_playing else "secondary", 
                   key='game_toggle_btn')
         
-        # Botón de Reacción (simula presionar la Barra Espaciadora)
-        st.button("REACCIÓN", on_click=handle_reaction, args=('SPACE',), 
-                  type="secondary", 
-                  disabled=(not st.session_state.get('is_playing_reaction') or current_state in ['ROJO', 'INICIO', 'FINALIZADO', 'FALSO_INICIO', 'FALLO_TIEMPO']), 
+        # Botón AVANZAR PASO (Habilita el estímulo GO después de la espera manual)
+        is_advancing_disabled = not is_playing or current_state not in ['ROJO', 'HIT', 'FALLO_TIEMPO', 'FALSO_INICIO']
+
+        st.button("AVANZAR PASO", on_click=update_reaction_state, 
+                  type="primary" if current_state == 'ROJO' else "secondary", 
+                  disabled=is_advancing_disabled,
+                  help="Avanza de ROJO (Espera) a VERDE (GO), o pasa a la siguiente prueba después de un acierto/fallo.")
+
+        # Botón de Reacción
+        st.button("REACCIÓN", on_click=handle_reaction_click, 
+                  type="primary", 
+                  disabled=(current_state != 'VERDE'), 
                   key='reaction_button')
         
         st.markdown("---")
         st.markdown("### Resultados")
         
-        # Se usa el valor de la sesión para mostrar el último tiempo
-        last_time_display = f"{st.session_state.get('last_time_ms'):.2f} ms" if isinstance(st.session_state.get('last_time_ms'), float) else st.session_state.get('last_time_ms', '---')
+        # Mostrar el último tiempo (limpiamos el formato si es LENTO o FALSO)
+        last_time_val = st.session_state.get('last_time_ms', '---')
+        last_time_display = f"{last_time_val:.2f} ms" if isinstance(last_time_val, float) else last_time_val
         
         st.metric("Último Tiempo (ms)", last_time_display)
         st.metric("Tiempo Promedio (ms)", st.session_state['avg_time_display'])
@@ -883,17 +868,43 @@ def show_reaction_lab(atleta_actual):
         st.metric("Aciertos", st.session_state['hits'])
         st.metric("Errores/Fallos", st.session_state['misses'])
         
-        if st.session_state.get('reaction_state') == 'FINALIZADO' and st.session_state['avg_time_display'] != '---':
-            avg_time_float = float(st.session_state['avg_time_display']) if st.session_state['avg_time_display'] != '---' else 0
-            st.button("💾 Guardar Resultados", on_click=save_reaction_record, args=(st.session_state['atleta_nombre'], MODO_RV, avg_time_float, st.session_state['hits'], st.session_state['max_tests_reaction']), type="secondary")
-        
+        if current_state == 'FINALIZADO' and st.session_state['avg_time_display'] != '---':
+            st.success("Resultados guardados.")
+
         st.markdown("---")
         st.subheader("Historial de Tiempos")
         df_historial = df_reaction_records[df_reaction_records['Atleta'] == atleta_actual].copy()
         st.dataframe(df_historial[['Fecha', 'Tiempo_ms']].tail(5), use_container_width=True)
 
-# ----------------------------------------------------------------------------------
-# --- CÓDIGO DE INTERFAZ PRINCIPAL DE STREAMLIT ---
+# --- 5. CARGA INICIAL DE DATAFRAMES ---
+
+df_atletas, initial_status = load_data()  
+df_calendario_full = load_calendar_data()  
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy()  
+df_pruebas_full, tests_status = load_tests_data()  
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy()  
+df_perfiles, perfil_status = load_perfil_data()  
+df_ranking, ranking_status = load_ranking_data()
+df_readiness, readiness_status = load_readiness_data()
+df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
+df_reaction_records = load_reaction_records() # NUEVA CARGA
+
+# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
+if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
+    st.toast(initial_status, icon="📝")
+if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
+    st.toast(tests_status, icon="🛠️")
+if perfil_status and ('creado' in perfil_status.lower() or 'error' in perfil_status.lower() or 'adver' in perfil_status.lower()):
+    st.toast(perfil_status, icon="👤")
+if ranking_status and ('creado' in ranking_status.lower() or 'error' in ranking_status.lower() or 'adver' in ranking_status.lower()):
+    st.toast(ranking_status, icon="🏆")
+if readiness_status and ('creado' in readiness_status.lower() or 'error' in readiness_status.lower() or 'adver' in readiness_status.lower()):
+    st.toast(readiness_status, icon="🧘")
+if test_results_status and ('creado' in test_results_status.lower() or 'error' in test_results_status.lower() or 'adver' in test_results_status.lower()):
+    st.toast(test_results_status, icon="🏃")
+
+
+# --- 6. INTERFAZ PRINCIPAL DE STREAMLIT ---
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
 
