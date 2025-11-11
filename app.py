@@ -698,16 +698,17 @@ def highlight_imminent_events(df):
 def end_session_click():
     """Función para el botón PARAR SESIÓN (o INICIAR/FINALIZAR)."""
     
-    # Si estaba jugando, guardamos los resultados antes de resetear
-    if st.session_state.get('is_playing_reaction') and st.session_state.get('reaction_times_ms') and st.session_state['avg_time_display'] != '---':
-         avg_time_float = float(st.session_state['avg_time_display'])
-         save_reaction_record(
-            st.session_state['atleta_nombre'],
-            MODO_RV,
-            avg_time_float,
-            st.session_state.get('hits', 0),
-            st.session_state.get('max_tests_reaction', 10)
-         )
+    # Si estaba jugando y hay data, guardamos los resultados antes de resetear
+    if st.session_state.get('is_playing_reaction') and st.session_state.get('reaction_times_ms'):
+         avg_time_float = float(st.session_state['avg_time_display']) if st.session_state['avg_time_display'] != '---' else 0
+         if avg_time_float > 0:
+             save_reaction_record(
+                st.session_state['atleta_nombre'],
+                MODO_RV,
+                avg_time_float,
+                st.session_state.get('hits', 0),
+                st.session_state.get('max_tests_reaction', 10)
+             )
 
     # Resetea el estado para volver a INICIO
     st.session_state['is_playing_reaction'] = False
@@ -724,7 +725,22 @@ def end_session_click():
 
 def start_reaction_test():
     """Inicializa la sesión y comienza el primer intento (ROJO)."""
-    # 1. Inicialización de la sesión
+    
+    # 1. Validación y Lectura de Ajustes
+    try:
+        new_max_tests = int(st.session_state.max_tests_input)
+        
+        if new_max_tests <= 0: raise ValueError
+        
+        st.session_state['max_tests_reaction'] = new_max_tests
+        st.session_state['min_delay'] = float(st.session_state.min_delay_input)
+        st.session_state['max_delay'] = float(st.session_state.max_delay_input)
+
+    except (ValueError, KeyError):
+        st.error("Asegúrate de que la cantidad de pruebas y los rangos de tiempo sean números válidos.")
+        return
+    
+    # 2. Inicialización de la sesión
     st.session_state['is_playing_reaction'] = True
     st.session_state['reaction_state'] = 'ROJO' # Comienza el primer intento en ROJO (Espera)
     st.session_state['reaction_start_time'] = time.time()
@@ -734,13 +750,30 @@ def start_reaction_test():
     st.session_state['hits'] = 0
     st.session_state['last_time_ms'] = '---'
     st.session_state['avg_time_display'] = '---'
-    st.session_state['max_tests_reaction'] = 10 
     
     # Forzar recarga para actualizar la UI a ROJO
     st.rerun()
 
+def simulate_delay_and_go():
+    """
+    Simula el retardo aleatorio y pasa a VERDE automáticamente.
+    Esto se debe llamar DESPUÉS del botón 'INICIAR' en el flujo de la aplicación.
+    """
+    if st.session_state.get('is_playing_reaction') and st.session_state['reaction_state'] == 'ROJO':
+        
+        # 1. Simular la espera (calculamos el tiempo que *debió* esperar)
+        delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
+        
+        # 2. Usar sleep para forzar una pausa real en el flujo.
+        time.sleep(delay)
+        
+        # 3. Transicionar a VERDE
+        st.session_state['reaction_state'] = 'VERDE'
+        st.session_state['reaction_start_time'] = time.time() # Iniciar cronómetro de reacción
+        st.rerun() # Forzar el cambio a VERDE
+
 def update_reaction_state():
-    """Lógica para avanzar el ciclo del juego con la interacción del usuario (AVANZAR PASO)."""
+    """Lógica para avanzar el ciclo del juego con la interacción del usuario (AVANZAR PASO/SIGUIENTE INTENTO)."""
     current_state = st.session_state.get('reaction_state')
     
     if current_state == 'ROJO':
@@ -813,7 +846,8 @@ def show_reaction_lab(atleta_actual):
         
         # Mapeo de HTML según el estado (para el 'círculo')
         if current_state == 'ROJO':
-             color_container_html = "<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>ESPERA MANUAL</h1><p style='color: white;'>Presiona 'AVANZAR PASO' cuando quieras el estímulo.</p></div>"
+             # Aquí es donde simulamos el delay. Se llamará a simulate_delay_and_go()
+             color_container_html = "<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>ESPERANDO...</h1><p style='color: white;'>Prueba: " + str(st.session_state['test_count'] + 1) + "</p></div>"
         elif current_state == 'VERDE':
              color_container_html = "<div style='background-color: green; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: black;'>¡GO!</h1><p style='color: black;'>¡REACCIONA AHORA!</p></div>"
         elif current_state == 'HIT':
@@ -826,6 +860,19 @@ def show_reaction_lab(atleta_actual):
             color_container_html = f"<div style='background-color: black; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>{('SESIÓN TERMINADA' if current_state == 'FINALIZADO' else 'PRESIONA INICIAR')}</h1><p style='color: white;'>Promedio: {avg_disp} ms</p></div>"
             
         st.markdown(color_container_html, unsafe_allow_html=True)
+        
+        # --- LÓGICA DE ACTIVACIÓN DE DELAY ---
+        # Si estamos en ROJO y JUGANDO, llamamos al simulador para que inicie la pausa y transicione a VERDE
+        if st.session_state.get('is_playing_reaction') and current_state == 'ROJO':
+             # Usamos sleep para forzar una pausa real antes de VERDE, simulando el delay aleatorio
+             delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
+             time.sleep(delay)
+             
+             # Transicionar a VERDE y forzar recarga (esta recarga será visible)
+             st.session_state['reaction_state'] = 'VERDE'
+             st.session_state['reaction_start_time'] = time.time()
+             st.rerun() 
+
 
     # --- Panel de Stats (Derecha) ---
     with col_stats:
@@ -836,18 +883,25 @@ def show_reaction_lab(atleta_actual):
         current_state = st.session_state['reaction_state'] # Recargamos el estado
         btn_text = "PARAR SESIÓN" if is_playing else "INICIAR SESIÓN"
         
+        # Controles de Configuración (Solo visibles en INICIO)
+        if not is_playing:
+            st.number_input("N° Pruebas:", min_value=1, max_value=50, value=st.session_state.get('max_tests_reaction', 10), key='max_tests_input')
+            col_min, col_max = st.columns(2)
+            col_min.number_input("Delay Min (s):", min_value=0.5, max_value=10.0, value=st.session_state.get('min_delay', 1.0), key='min_delay_input')
+            col_max.number_input("Delay Max (s):", min_value=1.0, max_value=10.0, value=st.session_state.get('max_delay', 4.0), key='max_delay_input')
+        
         # Botón INICIAR/PARAR
         st.button(btn_text, on_click=end_session_click if is_playing else start_reaction_test, 
                   type="primary" if not is_playing else "secondary", 
                   key='game_toggle_btn')
         
-        # Botón AVANZAR PASO (Habilita el estímulo GO después de la espera manual)
-        is_advancing_disabled = not is_playing or current_state not in ['ROJO', 'HIT', 'FALLO_TIEMPO', 'FALSO_INICIO']
+        # Botón SIGUIENTE INTENTO (Necesario después de HIT/FALLO)
+        is_advancing_disabled = not is_playing or current_state not in ['HIT', 'FALLO_TIEMPO', 'FALSO_INICIO']
 
-        st.button("AVANZAR PASO", on_click=update_reaction_state, 
-                  type="primary" if current_state == 'ROJO' else "secondary", 
+        st.button("SIGUIENTE INTENTO", on_click=update_reaction_state, 
+                  type="secondary", 
                   disabled=is_advancing_disabled,
-                  help="Avanza de ROJO (Espera) a VERDE (GO), o pasa a la siguiente prueba después de un acierto/fallo.")
+                  help="Avanza a la fase de espera del siguiente intento después de un resultado.")
 
         # Botón de Reacción
         st.button("REACCIÓN", on_click=handle_reaction_click, 
@@ -1346,7 +1400,7 @@ if st.session_state['logged_in']:
                 
             # Muestra la tabla (para el atleta)
             if not df_display.empty:
-                cols_to_display = [col for col in df_display.columns if col != 'ID']
+                cols_to_display = [col for col in df_display.columns if col not in ['ID']]
                 st.dataframe(df_display[cols_to_display], use_container_width=True, hide_index=True)
 
             st.markdown("---")
