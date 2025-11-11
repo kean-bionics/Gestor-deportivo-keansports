@@ -693,6 +693,333 @@ def highlight_imminent_events(df):
     
     return styles
 
+# --- FUNCIÓN DE CARGA DE REGISTROS DE REACCIÓN ---
+@st.cache_data(ttl=3600)
+def load_reaction_records():
+    """Carga los registros de tiempo de reacción, si existe el archivo."""
+    if not os.path.exists(REACTION_RECORDS_FILE):
+        df = pd.DataFrame(columns=['Atleta', 'Fecha', 'Modo', 'Tiempo_ms', 'Aciertos', 'Intentos'])
+        df.to_excel(REACTION_RECORDS_FILE, index=False, engine='openpyxl')
+        return df
+    try:
+        df = pd.read_excel(REACTION_RECORDS_FILE, engine='openpyxl')
+        df.columns = df.columns.str.strip()
+        if 'Fecha' in df.columns:
+            df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
+        return df
+    except Exception:
+        # En caso de error, devuelve un DataFrame vacío pero funcional
+        return pd.DataFrame(columns=['Atleta', 'Fecha', 'Modo', 'Tiempo_ms', 'Aciertos', 'Intentos'])
+
+# --- FUNCIÓN DE GUARDADO DE REGISTROS DE REACCIÓN ---
+def save_reaction_record(atleta, modo, avg_time_ms, aciertos, intentos):
+    """Guarda un nuevo registro de tiempo de reacción."""
+    df_current = load_reaction_records()
+    
+    new_record = pd.DataFrame([{
+        'Atleta': atleta, 
+        'Fecha': datetime.now(), 
+        'Modo': modo, 
+        'Tiempo_ms': avg_time_ms,
+        'Aciertos': aciertos,
+        'Intentos': intentos
+    }])
+    
+    df_updated = pd.concat([df_current, new_record], ignore_index=True)
+    
+    try:
+        df_updated.to_excel(REACTION_RECORDS_FILE, index=False, engine='openpyxl')
+        load_reaction_records.clear() # Limpiar la caché
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el registro de reacción: {e}")
+        return False
+    
+# --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
+
+df_atletas, initial_status = load_data()  
+df_calendario_full = load_calendar_data()  
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy()  
+df_pruebas_full, tests_status = load_tests_data()  
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy()  
+df_perfiles, perfil_status = load_perfil_data()  
+df_ranking, ranking_status = load_ranking_data()
+df_readiness, readiness_status = load_readiness_data()
+df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
+df_reaction_records = load_reaction_records() # NUEVA CARGA
+
+# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
+if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
+    st.toast(initial_status, icon="📝")
+if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
+    st.toast(tests_status, icon="🛠️")
+if perfil_status and ('creado' in perfil_status.lower() or 'error' in perfil_status.lower() or 'adver' in perfil_status.lower()):
+    st.toast(perfil_status, icon="👤")
+if ranking_status and ('creado' in ranking_status.lower() or 'error' in ranking_status.lower() or 'adver' in ranking_status.lower()):
+    st.toast(ranking_status, icon="🏆")
+if readiness_status and ('creado' in readiness_status.lower() or 'error' in readiness_status.lower() or 'adver' in readiness_status.lower()):
+    st.toast(readiness_status, icon="🧘")
+if test_results_status and ('creado' in test_results_status.lower() or 'error' in test_results_status.lower() or 'adver' in test_results_status.lower()):
+    st.toast(test_results_status, icon="🏃")
+
+
+# --- 4. FUNCIONES AUXILIARES ---
+
+def check_login(username, password):
+    """Verifica el usuario y contraseña contra el DataFrame."""
+    user_row = df_atletas[df_atletas['Atleta'].str.lower() == username.lower()]
+    
+    if not user_row.empty:
+        if user_row['Contraseña'].iloc[0] == password:
+            return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
+    return False, None, None
+
+def login_form():
+    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
+    with st.form("login_form"):
+        username = st.text_input("Usuario (Nombre del Atleta)")
+        password = st.text_input("Contraseña", type="password")
+        submitted = st.form_submit_button("Entrar")
+
+        if submitted:
+            success, rol, atleta_nombre = check_login(username, password)
+            if success:
+                st.session_state['logged_in'] = True
+                st.session_state['rol'] = rol
+                st.session_state['atleta_nombre'] = atleta_nombre
+                st.success(f"Bienvenido, {atleta_nombre} ({rol})!")
+                st.rerun()  
+            else:
+                st.error("Usuario o Contraseña incorrectos.")
+
+def logout():
+    """Cierra la sesión del usuario."""
+    if 'logged_in' in st.session_state and st.session_state['logged_in']:
+        st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.clear())
+        st.sidebar.markdown(f"**Conectado como:** {st.session_state['atleta_nombre']}")
+        st.sidebar.markdown(f"**Rol:** {st.session_state['rol']}")
+
+def calcular_porcentaje_rm(rm_value, porcentaje):
+    """Calcula el peso basado en un porcentaje del RM, redondeando a 0.5 kg."""
+    if rm_value > 0 and 0 <= porcentaje <= 100:
+        peso = rm_value * (porcentaje / 100)
+        return round(peso * 2) / 2
+    return 0
+
+# Relación inversa RIR a Porcentaje de 1RM
+RIR_TO_PERCENT = {
+    0: (90, 100),  
+    1: (87, 95),  
+    2: (80, 87),  
+    3: (70, 80),  
+    4: (65, 75),  
+}
+
+def calcular_carga_por_rir(rm_value, rir):
+    """Calcula el peso óptimo basado en RIR y el RM, tomando el punto medio del rango de porcentaje."""
+    if rir not in RIR_TO_PERCENT or rm_value <= 0:
+        return 0, 0
+        
+    min_perc, max_perc = RIR_TO_PERCENT[rir]
+    mid_perc = (min_perc + max_perc) / 2
+    
+    peso = rm_value * (mid_perc / 100)
+    return round(peso * 2) / 2, mid_perc
+
+def descomponer_placas(peso_total, peso_barra):
+    """Calcula las placas necesarias por lado para un peso total dado."""
+    if peso_total <= peso_barra or peso_barra < 0:
+        return "Barra Sola o Peso Inválido", {}
+
+    peso_a_cargar = (peso_total - peso_barra) / 2
+    placas_disponibles = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5]  
+    placas_por_lado = {}
+
+    peso_restante = peso_a_cargar
+    
+    for placa in placas_disponibles:
+        if peso_restante >= (placa - 0.01):
+            cantidad = int(peso_restante // placa)
+            if cantidad > 0:
+                placas_por_lado[placa] = cantidad
+                peso_restante -= (cantidad * placa)
+                
+            if peso_restante < 0.1:  
+                peso_restante = 0
+                break
+    
+    peso_cargado_total = peso_barra + (sum(p * c for p, c in placas_por_lado.items()) * 2)
+
+    return peso_cargado_total, placas_por_lado
+
+def save_main_data(df_edited):
+    """Guarda el DataFrame editado de atletas en el archivo XLSX, forzando Última_Fecha al final."""
+    try:
+        # 1. Limpieza y preparación
+        df_edited.columns = df_edited.columns.str.strip()
+        df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
+
+        # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
+        if 'Última_Fecha' in df_edited.columns:
+            df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
+        
+        # 2. Reordenamiento CLAVE de columnas para dejar 'Última_Fecha' al final
+        cols = df_edited.columns.tolist()
+        if 'Última_Fecha' in cols:
+            cols.remove('Última_Fecha')
+            cols.append('Última_Fecha')
+        
+        # Guardar solo las columnas que tienen datos
+        valid_cols = [col for col in cols if not pd.isna(df_edited[col]).all()]
+        df_to_save = df_edited[valid_cols].copy()
+        
+        # 3. Sobrescribir el archivo Excel
+        df_to_save.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
+        
+        # 4. Limpiar la caché de los datos principales
+        load_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar los datos de atletas: {e}")
+        return False
+
+def save_readiness_data(df_edited):
+    """Guarda el DataFrame editado de readiness."""
+    
+    try:
+        df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
+        load_readiness_data.clear()  
+        return load_readiness_data()[0], True
+        
+    except Exception as e:
+        st.error(f"Error al guardar los datos de bienestar: {e}")
+        return df_edited, False
+    
+def save_tests_data(df_edited):
+    """Guarda el DataFrame editado de pruebas activas en el archivo XLSX."""
+    # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
+    df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
+    
+    # Aseguramos que solo se guarden las columnas requeridas
+    df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
+    
+    try:
+        # 2. Sobrescribir el archivo Excel
+        df_to_save.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
+        
+        # 3. Limpiar la caché de las pruebas para que la calculadora se actualice
+        load_tests_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar las pruebas: {e}")
+        return False
+
+def save_calendar_data(df_edited):
+    """Guarda el DataFrame editado de calendario en el archivo XLSX."""
+    # 1. Aseguramos que la columna 'Habilitado' tenga 'Sí' o 'No' al guardar en Excel
+    df_edited['Habilitado'] = df_edited['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
+    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') # Limpiar filas sin datos esenciales
+    
+    # 2. Aseguramos que solo se guardan las columnas requeridas
+    df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
+    
+    try:
+        # 3. Sobrescribir el archivo Excel
+        df_to_save.to_excel(CALENDAR_FILE, index=False, engine='openpyxl')
+        
+        # 4. Limpiar la caché del calendario para que se actualice
+        load_calendar_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el calendario: {e}")
+        return False
+
+def save_ranking_data(df_edited):
+    """Guarda el DataFrame editado del ranking, recalculando y ordenando primero."""
+    
+    # 1. Limpiar filas vacías
+    df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
+    
+    # 2. Calcular puntos y ordenar (la lógica clave)
+    df_sorted = calculate_and_sort_ranking(df_cleaned)
+
+    # 3. Guardar solo las columnas requeridas
+    df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS]
+    
+    try:
+        df_to_save.to_excel(RANKING_FILE, index=False, engine='openpyxl')
+        load_ranking_data.clear()  
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el ranking: {e}")
+        return False
+
+def save_test_results_data(df_edited):
+    """Guarda el DataFrame editado de resultados de pruebas físicas en el archivo XLSX."""
+    
+    try:
+        # Limpieza y preparación (eliminar filas vacías y asegurar columnas)
+        df_cleaned = df_edited.dropna(subset=['Atleta', 'Fecha'], how='any').copy()
+        
+        # 1. Asegurar que las nuevas filas tengan un ID
+        max_id = df_cleaned['ID'].max() if 'ID' in df_cleaned.columns and not df_cleaned.empty else 0
+        
+        for index, row in df_cleaned.iterrows():
+            if pd.isna(row.get('ID', 0)) or row.get('ID', 0) == 0:
+                max_id += 1
+                df_cleaned.loc[index, 'ID'] = max_id
+        
+        # 2. Convertir la Fecha antes de guardar
+        if 'Fecha' in df_cleaned.columns:
+            df_cleaned['Fecha'] = pd.to_datetime(df_cleaned['Fecha'], errors='coerce').dt.date
+            
+        # 3. Guardar todas las columnas que existen en el DF editado
+        df_to_save = df_cleaned.copy()
+        
+        # 4. Sobrescribir el archivo Excel
+        df_to_save.to_excel(TEST_RESULTS_FILE, index=False, engine='openpyxl')
+        
+        # 5. Limpiar la caché
+        load_test_results_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar los resultados de pruebas: {e}")
+        return False
+
+
+# --- 4. FUNCIONES AUXILIARES ---
+
+def get_days_until(date_obj):
+    """Calcula los días restantes hasta una fecha, o un gran número si ya pasó."""
+    today = datetime.now().date()
+    if isinstance(date_obj, datetime):
+        date_obj = date_obj.date()
+        
+    if pd.isna(date_obj) or date_obj is None:
+        return 999
+        
+    delta = date_obj - today
+    return delta.days
+
+def highlight_imminent_events(df):
+    """Aplica estilo de fondo a filas con eventos a menos de 5 días."""
+    
+    if 'Days_Until' not in df.columns:
+        return pd.DataFrame('', index=df.index, columns=df.columns)
+        
+    mask = (df['Days_Until'] >= 0) & (df['Days_Until'] <= 5)
+    
+    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+    
+    # Aplicar estilo: fondo verde claro de 'success'
+    styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;'  
+    
+    return styles
+
 # --- FUNCIONES DE CONTROL DE JUEGO (ReactionLab) ---
 
 def end_session_click():
@@ -780,7 +1107,7 @@ def update_reaction_state():
     
     if current_state == 'ROJO':
         # ROJO -> VERDE (Estímulo GO)
-        # Esta lógica no debería ser llamada por el usuario en el flujo automático (es simulate_delay_and_go)
+        # Esta lógica no debería ser llamada por el usuario en el flujo automático
         pass
 
     elif current_state == 'VERDE':
@@ -1041,15 +1368,8 @@ if st.session_state['logged_in']:
     if 'active_tab' not in st.session_state or st.session_state['active_tab'] not in tab_names:
         st.session_state['active_tab'] = tab_names[0] 
 
-    # Encontramos el índice para la selección inicial
-    try:
-        active_index = tab_names.index(st.session_state['active_tab'])
-    except ValueError:
-        active_index = 0
-        st.session_state['active_tab'] = tab_names[0] # Reiniciar si hay error
-
     # Creamos las pestañas usando la sintaxis correcta
-    tabs = st.tabs(tab_names, tab_names[active_index]) # Sintaxis: st.tabs(opciones, default_value)
+    tabs = st.tabs(tab_names, st.session_state['active_tab'])
 
     # Asignar nombres a las pestañas para el código (esto depende del rol)
     if rol_actual == 'Entrenador':
