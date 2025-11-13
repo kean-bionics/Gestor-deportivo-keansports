@@ -5,44 +5,52 @@ import os
 import io
 from PIL import Image
 from datetime import datetime, timedelta, time
-import streamlit.components.v1 as components
+import streamlit.components.v1 as components 
 import time
 import random
-import sqlite3 # ⬅️ NUEVA IMPORTACIÓN
-# import bcrypt # ⬅️ BCRYPT: Descomentar si usas hasheo de contraseñas
 
-# --- CONSTANTES DE BASE DE DATOS Y JUEGO ---
-DB_FILE = 'sports_management.sqlite' # Archivo único de la base de datos SQLite
+# --- CONSTANTES DE JUEGO ---
 MODO_RV = "Reacción Rojo a Verde"
+REACTION_RECORDS_FILE = 'reaction_records.xlsx' # Archivo para los registros de reacción
+# ---------------------------
 
-# --- 1. CONSTANTES DE ESTRUCTURA Y ARCHIVOS ---
+# --- 1. CONFIGURACIÓN INICIAL DE ARCHIVOS Y FUNCIONES DE CÁLCULO ---
 
-# Columnas requeridas para cada tabla (ahora tablas en SQLite)
+# Archivo 1: Atletas y Marcas RM
+EXCEL_FILE = 'atletas_data.xlsx'  
 REQUIRED_COLUMNS = ['ID', 'Atleta', 'Contraseña', 'Rol', 'Sentadilla_RM', 'PressBanca_RM', 'PesoCorporal', 'Última_Fecha']
+
+# Archivo 2: Calendario
+CALENDAR_FILE = 'calendario_data.xlsx'
 CALENDAR_REQUIRED_COLUMNS = ['Evento', 'Fecha', 'Detalle', 'Habilitado']
-PRUEBAS_REQUIRED_COLUMNS = ['NombrePrueba', 'ColumnaRM', 'Visible']
-PERFILES_REQUIRED_COLUMNS = ['Atleta', 'Edad', 'Fecha_Nacimiento', 'Documento', 'Altura_cm', 'Sexo', 'Posicion', 'Email']
+
+# Archivo 3: Pruebas Activas (Modularidad de la Calculadora)
+PRUEBAS_FILE = 'pruebas_activas.xlsx'
+PRUEBAS_REQUIRED_COLUMNS = ['NombrePrueba', 'ColumnaRM', 'Visible'] # Añadida para robustez
+
+# Archivo 4: Perfiles de Atletas
+PERFILES_FILE = 'perfiles.xlsx'
+
+# Archivo 5: Ranking
+RANKING_FILE = 'ranking.xlsx'
 RANKING_REQUIRED_COLUMNS = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
+
+# Archivo 6: Readiness
+READINESS_FILE = 'readiness_data.xlsx'
 READINESS_REQUIRED_COLUMNS = ['Atleta', 'Fecha', 'Sueño', 'Molestias', 'Disposicion']
-MINIMUM_TEST_RESULTS_COLS = ['ID', 'Atleta', 'Fecha'] # Columnas mínimas para la tabla de resultados
+
+# Archivo 7: Resultados de Pruebas Físicas (DINÁMICO - SOLO SE REQUIEREN COLUMNAS MÍNIMAS)
+TEST_RESULTS_FILE = 'test_results.xlsx'
+
 
 # RUTA DEL LOGO
-LOGO_PATH = 'logo.png' 
+LOGO_PATH = 'logo.png'  
 
 # --- URL del Formulario de Google Forms (Persistencia de SRD) ---
 GOOGLE_FORM_EMBED_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdB4IZero1avUJ54oZv-RpzH_fBh_HFZ1klMuwcuDOEX4JuIw/viewform?embedded=true"
 
 
-# ----------------------------------------------------------------------------------
-# --- FUNCIONES DE BASE DE DATOS Y CÁLCULO ---
-# ----------------------------------------------------------------------------------
-
-def get_db_connection():
-    """Crea y devuelve un objeto de conexión a la base de datos SQLite."""
-    conn = sqlite3.connect(DB_FILE)
-    # Habilitar el manejo de tipos de datos para facilitar la lectura/escritura con Pandas
-    conn.execute("PRAGMA foreign_keys = ON") 
-    return conn
+# --- FUNCIONES DE CÁLCULO ---
 
 def calculate_tmb_mifflin(peso_kg, altura_cm, edad_anos, sexo):
     """Calcula la Tasa Metabólica Basal (TMB) usando la fórmula de Mifflin-St Jeor."""
@@ -71,86 +79,201 @@ def calculate_and_sort_ranking(df):
     return df_sorted
 
 # ----------------------------------------------------------------------------------
-# --- 2. FUNCIONES DE CARGA DE DATOS (SQLite) ---
-# ----------------------------------------------------------------------------------
 
-def load_data_from_db(table_name, required_cols):
-    """Función auxiliar para cargar cualquier tabla básica desde SQLite."""
-    conn = get_db_connection()
+
+# --- 2. FUNCIONES DE CARGA DE DATOS (EXCEL) ---
+
+@st.cache_data(ttl=3600)  
+def load_data():
+    """Carga los datos de los atletas. Si no existe, lo crea."""
     df = pd.DataFrame()
+    excel_exists = os.path.exists(EXCEL_FILE)
     status_message = None
     
-    try:
-        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
-        df.columns = df.columns.str.strip()
-        
-        # Comprobación básica de la estructura
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-             status_message = f"ADVERTENCIA: La tabla '{table_name}' existe pero le faltan columnas clave: {', '.join(missing_cols)}."
+    if excel_exists:
+        try:
+            df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
+            df.columns = df.columns.str.strip()  
+            
+            missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+            if missing_cols:
+                status_message = f"El archivo Excel de atletas existe, pero faltan columnas: {', '.join(missing_cols)}. Se añadirán vacías."
+                for col in missing_cols:
+                    df[col] = None
+                    
+        except Exception as e:
+            status_message = f"Error al leer el archivo Excel de atletas ({e}). Se creará un archivo nuevo de ejemplo."
+            excel_exists = False
 
-    except pd.io.sql.DatabaseError:
-        status_message = f"❌ Error: La tabla '{table_name}' no existe en la DB. ¡Ejecuta el script de migración!"
-        df = pd.DataFrame(columns=required_cols) # DataFrame vacío de emergencia
+    if not excel_exists or df.empty:
+        status_message = f"Creando el archivo '{EXCEL_FILE}' de ejemplo con la estructura inicial."
+        data = {
+            'ID': [1, 2, 3],
+            'Atleta': ['Juan Pérez', 'Ana Gómez', 'Tu Nombre'],
+            'Contraseña': ['1234', '5678', 'admin'],  
+            'Rol': ['Atleta', 'Atleta', 'Entrenador'],  
+            'Sentadilla_RM': [140.0, 95.0, 160.0],
+            'PressBanca_RM': [100.0, 55.0, 115.0],
+            'PesoCorporal': [80.0, 60.0, 90.0],
+            'Última_Fecha': ['2023-10-15', '2023-10-10', '2023-10-12']
+        }
+        df = pd.DataFrame(data, columns=REQUIRED_COLUMNS)  
         
-    except Exception as e:
-        status_message = f"Error al leer la tabla '{table_name}': {e}"
-        df = pd.DataFrame(columns=required_cols) 
+        df.to_excel(EXCEL_FILE, index=False, engine='openpyxl')  
+        status_message += " Archivo creado con éxito."
         
-    finally:
-        conn.close()
-        
-    return df, status_message
-
-@st.cache_data(ttl=3600)
-def load_data():
-    """Carga los datos principales de los atletas."""
-    df, status_message = load_data_from_db('atletas_data', REQUIRED_COLUMNS)
-    
     if 'Última_Fecha' in df.columns:
-        df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce')
-        
-    return df, status_message 
+        df['Última_Fecha'] = pd.to_datetime(df['Última_Fecha'], errors='coerce')  
+
+    if 'Nueva_Prueba' in df.columns:
+        df = df.drop(columns=['Nueva_Prueba'])
+    
+    return df, status_message  
 
 @st.cache_data(ttl=600)
 def load_calendar_data():
-    """Carga los datos del calendario."""
-    df_calendario, status_message = load_data_from_db('calendario_data', CALENDAR_REQUIRED_COLUMNS)
+    """Carga los datos del calendario desde el archivo Excel."""
+    calendar_df = pd.DataFrame()
+    excel_exists = os.path.exists(CALENDAR_FILE)
     
-    if 'Fecha' in df_calendario.columns:
-        df_calendario['Fecha'] = pd.to_datetime(df_calendario['Fecha'], errors='coerce').dt.date
-    if 'Habilitado' in df_calendario.columns:
-        # Aseguramos que 'Habilitado' sea un booleano, si se guardó como string ('Sí'/'No')
-        df_calendario['Habilitado'] = df_calendario['Habilitado'].astype(str).str.lower().str.strip().apply(lambda x: x == 'sí' or x == 'true')
-        
-    return df_calendario
+    if excel_exists:
+        try:
+            calendar_df = pd.read_excel(CALENDAR_FILE, engine='openpyxl')
+            calendar_df.columns = calendar_df.columns.str.strip()  
+            
+            if 'Fecha' in calendar_df.columns:
+                calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
+
+        except:
+            excel_exists = False
+
+    if not excel_exists or calendar_df.empty:
+        data = {
+            'Evento': ['Prueba de RM (Sentadilla/PB)', 'Evaluación de Resistencia', 'Reunión de Equipo'],
+            'Fecha': [datetime.now().date() + timedelta(days=30), datetime.now().date() + timedelta(days=60), datetime.now().date() + timedelta(days=10)],
+            'Detalle': ['Test de 1RM', 'Test de Cooper o 5K', 'Revisión de Mes'],
+            'Habilitado': ['Sí', 'Sí', 'No']
+        }
+        calendar_df = pd.DataFrame(data, columns=CALENDAR_REQUIRED_COLUMNS)  
+        calendar_df['Fecha'] = pd.to_datetime(calendar_df['Fecha'], errors='coerce').dt.date
+        calendar_df.to_excel(CALENDAR_FILE, index=False, engine='openpyxl')  
+
+    if 'Habilitado' in calendar_df.columns:
+        calendar_df['Habilitado'] = calendar_df['Habilitado'].astype(str).str.lower().str.strip() == 'sí'
+
+    return calendar_df
 
 @st.cache_data(ttl=3600)
 def load_tests_data():
-    """Carga la lista de pruebas activas."""
-    df_tests, status_message = load_data_from_db('pruebas_activas', PRUEBAS_REQUIRED_COLUMNS)
+    """Carga la lista de pruebas activas, asegurando la estructura."""
+    status_message = None
+    excel_exists = os.path.exists(PRUEBAS_FILE)
+    df_tests = pd.DataFrame()
     
+    if excel_exists:
+        try:
+            df_tests = pd.read_excel(PRUEBAS_FILE, engine='openpyxl')
+            df_tests.columns = df_tests.columns.str.strip()
+            
+            # --- LÓGICA DE ROBUSTEZ (Mantenemos esta lista para asegurar el funcionamiento) ---
+            missing_cols = [col for col in PRUEBAS_REQUIRED_COLUMNS if col not in df_tests.columns]
+            if missing_cols:
+                status_message = f"ADVERTENCIA: El archivo de pruebas existe, pero faltan columnas: {', '.join(missing_cols)}. Se añadirán vacías."
+                for col in missing_cols:
+                    df_tests[col] = None
+            # -------------------------------
+                    
+        except Exception as e:
+            status_message = f"Error al leer el archivo de pruebas ({e}). Se creará un archivo nuevo de ejemplo."
+            excel_exists = False
+
+    if not excel_exists or df_tests.empty:
+        status_message = f"Creando el archivo '{PRUEBAS_FILE}' de ejemplo con la estructura inicial."
+        data = {
+            'NombrePrueba': ['Sentadilla', 'Press Banca', 'Peso Muerto', 'Otro'],
+            'ColumnaRM': ['Sentadilla_RM', 'PressBanca_RM', 'PesoMuerto_RM', 'N/A'],
+            'Visible': ['Sí', 'Sí', 'No', 'Sí']
+        }
+        df_tests = pd.DataFrame(data, columns=PRUEBAS_REQUIRED_COLUMNS)
+        df_tests.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
+        status_message += " Archivo creado con éxito."
+
     if 'Visible' in df_tests.columns:
-        df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: x == 'sí' or x == 'true')
-        
-    return df_tests, status_message
+        df_tests['Visible'] = df_tests['Visible'].astype(str).str.lower().str.strip().apply(lambda x: True if x == 'sí' else False)
+    
+    return df_tests, status_message 
 
 @st.cache_data(ttl=3600)
 def load_perfil_data():
-    """Carga los datos de perfil de los atletas."""
-    df_perfil, status_message = load_data_from_db('perfiles', PERFILES_REQUIRED_COLUMNS)
+    """Carga los datos de perfil de los atletas desde el archivo Excel."""
+    df_perfil = pd.DataFrame()
+    excel_exists = os.path.exists(PERFILES_FILE)
+    status_message = None
+
+    DEFAULT_PROFILE_DATA = {
+        'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez'],
+        'Edad': [30, 25, 22],
+        'Fecha_Nacimiento': ['1994-01-01', '1999-05-10', '2002-01-20'],
+        'Documento': ['999', '12345678', '87654321'],
+        'Altura_cm': [180, 178, 165],
+        'Sexo': ['Hombre', 'Hombre', 'Mujer'],
+        'Posicion': ['Entrenador', 'Delantero', 'Defensora'],
+        'Email': ['tu@mail.com', 'juan@mail.com', 'ana@mail.com']
+    }
+    REQUIRED_PROFILE_COLUMNS = list(DEFAULT_PROFILE_DATA.keys())
     
-    # Conversiones de tipo
-    if 'Edad' in df_perfil.columns:
-        df_perfil['Edad'] = pd.to_numeric(df_perfil['Edad'], errors='coerce')
-        
+    if excel_exists:
+        try:
+            df_perfil = pd.read_excel(PERFILES_FILE, engine='openpyxl')
+            df_perfil.columns = df_perfil.columns.str.strip()
+            
+            if 'Sexo' not in df_perfil.columns:
+                df_perfil['Sexo'] = 'Hombre'
+                
+        except:
+            excel_exists = False
+
+    if not excel_exists or df_perfil.empty:
+        df_perfil = pd.DataFrame(DEFAULT_PROFILE_DATA, columns=REQUIRED_PROFILE_COLUMNS)  
+        df_perfil.to_excel(PERFILES_FILE, index=False, engine='openpyxl')  
+        status_message = f"Archivo '{PERFILES_FILE}' creado con éxito."
+
     return df_perfil, status_message
 
 @st.cache_data(ttl=3600)
 def load_ranking_data():
-    """Carga, calcula y ordena el ranking."""
-    df_ranking, status_message = load_data_from_db('ranking', RANKING_REQUIRED_COLUMNS)
+    """Carga los datos de ranking, los calcula, ordena y crea el archivo si no existe."""
+    df_ranking = pd.DataFrame()
+    status_message = None
+    excel_exists = os.path.exists(RANKING_FILE)
     
+    if excel_exists:
+        try:
+            df_ranking = pd.read_excel(RANKING_FILE, engine='openpyxl')
+            df_ranking.columns = df_ranking.columns.str.strip()  
+            
+            missing_cols = [col for col in RANKING_REQUIRED_COLUMNS if col not in df_ranking.columns]
+            if missing_cols:
+                status_message = f"ADVERTENCIA: El archivo '{RANKING_FILE}' no tiene las columnas requeridas: {', '.join(missing_cols)}. Favor de corregir el archivo."
+                full_ranking_cols = RANKING_REQUIRED_COLUMNS + ['Puntos']  
+                df_ranking = pd.DataFrame(columns=full_ranking_cols)  
+            
+        except:
+            excel_exists = False
+
+    if not excel_exists or df_ranking.empty:
+        data = {
+            'Posicion': [1, 2, 3, 4],
+            'Atleta': ['Tu Nombre', 'Juan Pérez', 'Ana Gómez', 'Pedro Lopez'],
+            'Categoria': ['Senior', 'Junior', 'Senior', 'Junior'],
+            'Oros': [5, 2, 1, 0],
+            'Platas': [2, 3, 0, 1],
+            'Bronces': [1, 0, 1, 2],
+        }
+        df_ranking = pd.DataFrame(data, columns=RANKING_REQUIRED_COLUMNS)  
+        df_ranking.to_excel(RANKING_FILE, index=False, engine='openpyxl')
+        status_message = f"Archivo '{RANKING_FILE}' creado con éxito."
+
     if not df_ranking.empty:
         df_ranking = calculate_and_sort_ranking(df_ranking)
         
@@ -158,136 +281,112 @@ def load_ranking_data():
 
 @st.cache_data(ttl=3600)
 def load_readiness_data():
-    """Carga los datos de bienestar/readiness."""
-    df_readiness, status_message = load_data_from_db('readiness_data', READINESS_REQUIRED_COLUMNS)
-    
-    if 'Fecha' in df_readiness.columns:
+    """Carga los datos de bienestar/readiness desde el archivo Excel."""
+    df_readiness = pd.DataFrame()
+    excel_exists = os.path.exists(READINESS_FILE)
+    status_message = None
+
+    if excel_exists:
+        try:
+            df_readiness = pd.read_excel(READINESS_FILE, engine='openpyxl')
+            df_readiness.columns = df_readiness.columns.str.strip()
+            df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
+        except:
+            excel_exists = False
+
+    if not excel_exists or df_readiness.empty:
+        data = {
+            'Atleta': ['Juan Pérez', 'Juan Pérez', 'Ana Gómez'],
+            'Fecha': [datetime.now().date() - timedelta(days=2), datetime.now().date() - timedelta(days=1), datetime.now().date() - timedelta(days=1)],
+            'Sueño': [4, 3, 5],
+            'Molestias': [2, 3, 1],
+            'Disposicion': [5, 4, 5]
+        }
+        df_readiness = pd.DataFrame(data, columns=READINESS_REQUIRED_COLUMNS)  
         df_readiness['Fecha'] = pd.to_datetime(df_readiness['Fecha'], errors='coerce')
-        
+        df_readiness.to_excel(READINESS_FILE, index=False, engine='openpyxl')  
+        status_message = f"Archivo '{READINESS_FILE}' creado con éxito."
+    
     return df_readiness, status_message
 
 @st.cache_data(ttl=3600)
 def load_test_results_data():
-    """Carga los datos de los resultados de pruebas físicas de forma dinámica."""
-    df, status_message = load_data_from_db('test_results', MINIMUM_TEST_RESULTS_COLS)
+    """Carga los datos de los resultados de pruebas físicas de forma completamente dinámica."""
+    df = pd.DataFrame()
+    excel_exists = os.path.exists(TEST_RESULTS_FILE)
+    status_message = None
+    
+    # Definimos solo las columnas ADMINISTRATIVAS mínimas que SIEMPRE deben existir
+    MINIMUM_ADMIN_COLS = ['ID', 'Atleta', 'Fecha'] 
+    
+    if excel_exists:
+        try:
+            df = pd.read_excel(TEST_RESULTS_FILE, engine='openpyxl')
+            df.columns = df.columns.str.strip()
+            
+            # --- Lógica de Comprobación Mínima ---
+            if df.empty or not all(col in df.columns for col in MINIMUM_ADMIN_COLS):
+                 raise Exception("El archivo de pruebas está vacío o le faltan columnas mínimas.")
+                 
+        except Exception as e:
+            status_message = f"Error al leer el archivo Excel de pruebas físicas ({e}). Se creará un archivo nuevo de ejemplo."
+            excel_exists = False
 
+    if not excel_exists or df.empty or len(df.columns) < len(MINIMUM_ADMIN_COLS): 
+        # Si el archivo no existe o está corrupto, creamos una estructura de ejemplo
+        status_message = f"Creando el archivo '{TEST_RESULTS_FILE}' de ejemplo con la estructura inicial mínima."
+        data = {
+            'ID': [1, 2, 3],
+            'Atleta': ['Juan Pérez', 'Ana Gómez', 'Tu Nombre'],
+            'Fecha': [datetime.now().date(), datetime.now().date() - timedelta(days=7), datetime.now().date() - timedelta(days=14)],
+            'Ejemplo_100m_s': [11.5, 13.2, 11.0], # Columna de ejemplo
+            'Ejemplo_Salto_cm': [250, 220, 270], # Columna de ejemplo
+        }
+        # Usamos las claves del diccionario como columnas iniciales
+        df = pd.DataFrame(data)
+        df.to_excel(TEST_RESULTS_FILE, index=False, engine='openpyxl')
+        status_message += " Archivo creado con éxito."
+            
+    # Conversión de tipos de datos: Aplicamos la lógica dinámica
+    
     if 'Fecha' in df.columns:
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce').dt.date
 
     if 'ID' in df.columns:
         df['ID'] = pd.to_numeric(df['ID'], errors='coerce').fillna(0).astype(int)
 
-    # Convertir todas las columnas de pruebas a float (dinámico)
+    # 3. Handle Numeric columns: Intentamos convertir todas las columnas de pruebas a float.
     cols_to_skip = ['ID', 'Atleta', 'Fecha']
     numeric_cols_found = [col for col in df.columns if col not in cols_to_skip]
     
     for col in numeric_cols_found:
-        if col in df.columns: 
+        # Intentamos convertir todo lo demás a float, para que Stremalit lo vea como un número
+        if col in df.columns: # Comprobación de seguridad
             df[col] = pd.to_numeric(df[col], errors='coerce').astype(float) 
             
     return df, status_message
 
+# --- FUNCIÓN DE CARGA DE REGISTROS DE REACCIÓN ---
 @st.cache_data(ttl=3600)
 def load_reaction_records():
-    """Carga los registros de tiempo de reacción."""
-    df_reaction, status_message = load_data_from_db('reaction_records', ['Atleta', 'Fecha', 'Modo', 'Tiempo_ms', 'Aciertos', 'Intentos'])
-    
-    if 'Fecha' in df_reaction.columns:
-        df_reaction['Fecha'] = pd.to_datetime(df_reaction['Fecha'], errors='coerce')
-        
-    return df_reaction
-    
-# ----------------------------------------------------------------------------------
-# --- FUNCIONES DE GUARDADO (SQLite) ---
-# ----------------------------------------------------------------------------------
-
-def save_dataframe_to_db(df_edited, table_name, index_cols=None):
-    """Función auxiliar para guardar un DataFrame a una tabla SQLite con sobrescritura."""
-    conn = get_db_connection()
-    success = False
+    """Carga los registros de tiempo de reacción, si existe el archivo."""
+    if not os.path.exists(REACTION_RECORDS_FILE):
+        df = pd.DataFrame(columns=['Atleta', 'Fecha', 'Modo', 'Tiempo_ms', 'Aciertos', 'Intentos'])
+        df.to_excel(REACTION_RECORDS_FILE, index=False, engine='openpyxl')
+        return df
     try:
-        # La forma más simple: reemplazar la tabla completa
-        df_edited.to_sql(table_name, conn, if_exists='replace', index=False)
-        success = True
-    except Exception as e:
-        st.error(f"Error al guardar la tabla '{table_name}' en la DB: {e}")
-    finally:
-        conn.close()
-    return success
+        df = pd.read_excel(REACTION_RECORDS_FILE, engine='openpyxl')
+        df.columns = df.columns.str.strip()
+        if 'Fecha' in df.columns:
+            df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
+        return df
+    except Exception:
+        # En caso de error, devuelve un DataFrame vacío pero funcional
+        return pd.DataFrame(columns=['Atleta', 'Fecha', 'Modo', 'Tiempo_ms', 'Aciertos', 'Intentos'])
 
-def save_main_data(df_edited):
-    """Guarda los datos de atletas."""
-    df_edited.columns = df_edited.columns.str.strip()
-    df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
-
-    if 'Última_Fecha' in df_edited.columns:
-        df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
-        
-    if save_dataframe_to_db(df_edited, 'atletas_data'):
-        load_data.clear()
-        return True
-    return False
-
-def save_readiness_data(df_edited):
-    """Guarda los datos de readiness."""
-    if save_dataframe_to_db(df_edited, 'readiness_data'):
-        load_readiness_data.clear()
-        return df_edited, True
-    return df_edited, False
-
-def save_tests_data(df_edited):
-    """Guarda las pruebas activas."""
-    df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
-    df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
-    
-    if save_dataframe_to_db(df_to_save, 'pruebas_activas'):
-        load_tests_data.clear()
-        return True
-    return False
-
-def save_calendar_data(df_edited):
-    """Guarda el calendario."""
-    df_edited['Habilitado'] = df_edited['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
-    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') 
-    df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
-    
-    if save_dataframe_to_db(df_to_save, 'calendario_data'):
-        load_calendar_data.clear()
-        return True
-    return False
-
-def save_ranking_data(df_edited):
-    """Guarda el ranking (recalcula primero)."""
-    df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
-    df_sorted = calculate_and_sort_ranking(df_cleaned)
-    df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS]
-    
-    if save_dataframe_to_db(df_to_save, 'ranking'):
-        load_ranking_data.clear()
-        return True
-    return False
-
-def save_test_results_data(df_edited):
-    """Guarda los resultados de pruebas físicas."""
-    df_cleaned = df_edited.dropna(subset=['Atleta', 'Fecha'], how='any').copy()
-    
-    # Asignar ID a filas nuevas/vacías
-    max_id = df_cleaned['ID'].max() if 'ID' in df_cleaned.columns and not df_cleaned.empty else 0
-    for index, row in df_cleaned.iterrows():
-        if pd.isna(row.get('ID', 0)) or row.get('ID', 0) == 0:
-            max_id += 1
-            df_cleaned.loc[index, 'ID'] = max_id
-            
-    if 'Fecha' in df_cleaned.columns:
-        df_cleaned['Fecha'] = pd.to_datetime(df_cleaned['Fecha'], errors='coerce').dt.date
-            
-    if save_dataframe_to_db(df_cleaned, 'test_results'):
-        load_test_results_data.clear()
-        return True
-    return False
-
+# --- FUNCIÓN DE GUARDADO DE REGISTROS DE REACCIÓN ---
 def save_reaction_record(atleta, modo, avg_time_ms, aciertos, intentos):
-    """Guarda un nuevo registro de tiempo de reacción (usando append)."""
+    """Guarda un nuevo registro de tiempo de reacción."""
     df_current = load_reaction_records()
     
     new_record = pd.DataFrame([{
@@ -301,73 +400,55 @@ def save_reaction_record(atleta, modo, avg_time_ms, aciertos, intentos):
     
     df_updated = pd.concat([df_current, new_record], ignore_index=True)
     
-    conn = get_db_connection()
     try:
-        # Usamos 'replace' de nuevo, ya que es más simple y re-escribe toda la tabla de records.
-        df_updated.to_sql('reaction_records', conn, if_exists='replace', index=False)
+        df_updated.to_excel(REACTION_RECORDS_FILE, index=False, engine='openpyxl')
         load_reaction_records.clear() # Limpiar la caché
         return True
     except Exception as e:
         st.error(f"Error al guardar el registro de reacción: {e}")
         return False
-    finally:
-        conn.close()
+    
+# --- 3. CARGA DE DATOS AL INICIO DE LA APP Y MUESTREO DE TOASTS ---
 
-# ----------------------------------------------------------------------------------
-# --- 3. CARGA DE DATOS AL INICIO DE LA APP ---
-# ----------------------------------------------------------------------------------
-
-df_atletas, initial_status = load_data() 
-df_calendario_full = load_calendar_data() 
-df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy() 
-df_pruebas_full, tests_status = load_tests_data() 
-df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy() 
-df_perfiles, perfil_status = load_perfil_data() 
+df_atletas, initial_status = load_data()  
+df_calendario_full = load_calendar_data()  
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy()  
+df_pruebas_full, tests_status = load_tests_data()  
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy()  
+df_perfiles, perfil_status = load_perfil_data()  
 df_ranking, ranking_status = load_ranking_data()
 df_readiness, readiness_status = load_readiness_data()
-df_test_results_full, test_results_status = load_test_results_data()
-df_reaction_records = load_reaction_records() 
-
+df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
+df_reaction_records = load_reaction_records() # NUEVA CARGA
 
 # Muestra mensajes de estado críticos (CREACIÓN o ERROR)
-if initial_status and ('error' in initial_status.lower()):
-    st.toast(initial_status, icon="❌")
-if tests_status and ('error' in tests_status.lower()):
-    st.toast(tests_status, icon="❌")
-if perfil_status and ('error' in perfil_status.lower()):
-    st.toast(perfil_status, icon="❌")
-if ranking_status and ('error' in ranking_status.lower()):
-    st.toast(ranking_status, icon="❌")
-if readiness_status and ('error' in readiness_status.lower()):
-    st.toast(readiness_status, icon="❌")
-if test_results_status and ('error' in test_results_status.lower()):
-    st.toast(test_results_status, icon="❌")
+if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
+    st.toast(initial_status, icon="📝")
+if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
+    st.toast(tests_status, icon="🛠️")
+if perfil_status and ('creado' in perfil_status.lower() or 'error' in perfil_status.lower() or 'adver' in perfil_status.lower()):
+    st.toast(perfil_status, icon="👤")
+if ranking_status and ('creado' in ranking_status.lower() or 'error' in ranking_status.lower() or 'adver' in ranking_status.lower()):
+    st.toast(ranking_status, icon="🏆")
+if readiness_status and ('creado' in readiness_status.lower() or 'error' in readiness_status.lower() or 'adver' in readiness_status.lower()):
+    st.toast(readiness_status, icon="🧘")
+if test_results_status and ('creado' in test_results_status.lower() or 'error' in test_results_status.lower() or 'adver' in test_results_status.lower()):
+    st.toast(test_results_status, icon="🏃")
 
 
-# --- 4. FUNCIONES AUXILIARES Y DE JUEGO (SIN CAMBIOS ESTRUCTURALES) ---
+# --- 4. FUNCIONES AUXILIARES ---
 
 def check_login(username, password):
-    """Verifica el usuario y contraseña contra el DataFrame (usando hash si es necesario)."""
+    """Verifica el usuario y contraseña contra el DataFrame."""
     user_row = df_atletas[df_atletas['Atleta'].str.lower() == username.lower()]
     
     if not user_row.empty:
-        # ⚠️ BCRYPT: Si hasheaste, usa bcrypt.checkpw aquí.
-        # Por ahora, usamos chequeo simple si no se usa bcrypt.
-        if user_row['Contraseña'].iloc[0] == password: 
+        if user_row['Contraseña'].iloc[0] == password:
             return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
-        # else:
-        #     # ⚠️ BCRYPT: Lógica de chequeo con hash (requiere import bcrypt)
-        #     hashed_password = user_row['Contraseña'].iloc[0]
-        #     try:
-        #         if bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
-        #             return True, user_row['Rol'].iloc[0], user_row['Atleta'].iloc[0]
-        #     except Exception:
-        #         pass # Falla silenciosamente si el hash está mal formateado.
-            
     return False, None, None
 
 def login_form():
-    """Muestra el formulario de inicio de sesión."""
+    """Muestra el formulario de inicio de sesión en el cuerpo principal de la app."""
     with st.form("login_form"):
         username = st.text_input("Usuario (Nombre del Atleta)")
         password = st.text_input("Contraseña", type="password")
@@ -401,10 +482,10 @@ def calcular_porcentaje_rm(rm_value, porcentaje):
 # Relación inversa RIR a Porcentaje de 1RM
 RIR_TO_PERCENT = {
     0: (90, 100),  
-    1: (87, 95),   
-    2: (80, 87),   
-    3: (70, 80),   
-    4: (65, 75),   
+    1: (87, 95),  
+    2: (80, 87),  
+    3: (70, 80),  
+    4: (65, 75),  
 }
 
 def calcular_carga_por_rir(rm_value, rir):
@@ -444,6 +525,147 @@ def descomponer_placas(peso_total, peso_barra):
 
     return peso_cargado_total, placas_por_lado
 
+def save_main_data(df_edited):
+    """Guarda el DataFrame editado de atletas en el archivo XLSX, forzando Última_Fecha al final."""
+    try:
+        # 1. Limpieza y preparación
+        df_edited.columns = df_edited.columns.str.strip()
+        df_edited = df_edited.dropna(subset=['Atleta', 'Contraseña'], how='any')
+
+        # Convertir a fecha compatible (solo la columna que se sabe que es fecha)
+        if 'Última_Fecha' in df_edited.columns:
+            df_edited['Última_Fecha'] = pd.to_datetime(df_edited['Última_Fecha'], errors='coerce').dt.date
+        
+        # 2. Reordenamiento CLAVE de columnas para dejar 'Última_Fecha' al final
+        cols = df_edited.columns.tolist()
+        if 'Última_Fecha' in cols:
+            cols.remove('Última_Fecha')
+            cols.append('Última_Fecha')
+        
+        # Guardar solo las columnas que tienen datos
+        valid_cols = [col for col in cols if not pd.isna(df_edited[col]).all()]
+        df_to_save = df_edited[valid_cols].copy()
+        
+        # 3. Sobrescribir el archivo Excel
+        df_to_save.to_excel(EXCEL_FILE, index=False, engine='openpyxl')
+        
+        # 4. Limpiar la caché de los datos principales
+        load_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar los datos de atletas: {e}")
+        return False
+
+def save_readiness_data(df_edited):
+    """Guarda el DataFrame editado de readiness."""
+    
+    try:
+        df_updated.to_excel(READINESS_FILE, index=False, engine='openpyxl')
+        load_readiness_data.clear()  
+        return load_readiness_data()[0], True
+        
+    except Exception as e:
+        st.error(f"Error al guardar los datos de bienestar: {e}")
+        return df_edited, False
+    
+def save_tests_data(df_edited):
+    """Guarda el DataFrame editado de pruebas activas en el archivo XLSX."""
+    # 1. Aseguramos que la columna 'Visible' tenga 'Sí' o 'No' al guardar en Excel
+    df_edited['Visible'] = df_edited['Visible'].apply(lambda x: 'Sí' if x else 'No')
+    
+    # Aseguramos que solo se guarden las columnas requeridas
+    df_to_save = df_edited[['NombrePrueba', 'ColumnaRM', 'Visible']].copy()
+    
+    try:
+        # 2. Sobrescribir el archivo Excel
+        df_to_save.to_excel(PRUEBAS_FILE, index=False, engine='openpyxl')
+        
+        # 3. Limpiar la caché de las pruebas para que la calculadora se actualice
+        load_tests_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar las pruebas: {e}")
+        return False
+
+def save_calendar_data(df_edited):
+    """Guarda el DataFrame editado de calendario en el archivo XLSX."""
+    # 1. Aseguramos que la columna 'Habilitado' tenga 'Sí' o 'No' al guardar en Excel
+    df_edited['Habilitado'] = df_edited['Habilitado'].apply(lambda x: 'Sí' if x else 'No')
+    df_edited_cleaned = df_edited.dropna(subset=['Evento', 'Fecha'], how='any') # Limpiar filas sin datos esenciales
+    
+    # 2. Aseguramos que solo se guardan las columnas requeridas
+    df_to_save = df_edited_cleaned[['Evento', 'Fecha', 'Detalle', 'Habilitado']].copy()
+    
+    try:
+        # 3. Sobrescribir el archivo Excel
+        df_to_save.to_excel(CALENDAR_FILE, index=False, engine='openpyxl')
+        
+        # 4. Limpiar la caché del calendario para que se actualice
+        load_calendar_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el calendario: {e}")
+        return False
+
+def save_ranking_data(df_edited):
+    """Guarda el DataFrame editado del ranking, recalculando y ordenando primero."""
+    
+    # 1. Limpiar filas vacías
+    df_cleaned = df_edited.dropna(subset=['Atleta'], how='any').copy()
+    
+    # 2. Calcular puntos y ordenar (la lógica clave)
+    df_sorted = calculate_and_sort_ranking(df_cleaned)
+
+    # 3. Guardar solo las columnas requeridas
+    df_to_save = df_sorted[RANKING_REQUIRED_COLUMNS]
+    
+    try:
+        df_to_save.to_excel(RANKING_FILE, index=False, engine='openpyxl')
+        load_ranking_data.clear()  
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar el ranking: {e}")
+        return False
+
+def save_test_results_data(df_edited):
+    """Guarda el DataFrame editado de resultados de pruebas físicas en el archivo XLSX."""
+    
+    try:
+        # Limpieza y preparación (eliminar filas vacías y asegurar columnas)
+        df_cleaned = df_edited.dropna(subset=['Atleta', 'Fecha'], how='any').copy()
+        
+        # 1. Asegurar que las nuevas filas tengan un ID
+        max_id = df_cleaned['ID'].max() if 'ID' in df_cleaned.columns and not df_cleaned.empty else 0
+        
+        for index, row in df_cleaned.iterrows():
+            if pd.isna(row.get('ID', 0)) or row.get('ID', 0) == 0:
+                max_id += 1
+                df_cleaned.loc[index, 'ID'] = max_id
+        
+        # 2. Convertir la Fecha antes de guardar
+        if 'Fecha' in df_cleaned.columns:
+            df_cleaned['Fecha'] = pd.to_datetime(df_cleaned['Fecha'], errors='coerce').dt.date
+            
+        # 3. Guardar todas las columnas que existen en el DF editado
+        df_to_save = df_cleaned.copy()
+        
+        # 4. Sobrescribir el archivo Excel
+        df_to_save.to_excel(TEST_RESULTS_FILE, index=False, engine='openpyxl')
+        
+        # 5. Limpiar la caché
+        load_test_results_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar los resultados de pruebas: {e}")
+        return False
+
+
+# --- 4. FUNCIONES AUXILIARES ---
+
 def get_days_until(date_obj):
     """Calcula los días restantes hasta una fecha, o un gran número si ya pasó."""
     today = datetime.now().date()
@@ -466,6 +688,7 @@ def highlight_imminent_events(df):
     
     styles = pd.DataFrame('', index=df.index, columns=df.columns)
     
+    # Aplicar estilo: fondo verde claro de 'success'
     styles.loc[mask] = 'background-color: #d4edda; color: #155724; font-weight: bold;'  
     
     return styles
@@ -477,16 +700,15 @@ def end_session_click():
     
     # Si estaba jugando y hay data, guardamos los resultados antes de resetear
     if st.session_state.get('is_playing_reaction') and st.session_state.get('reaction_times_ms'):
-        avg_time_float = float(st.session_state['avg_time_display']) if st.session_state['avg_time_display'] != '---' else 0
-        if avg_time_float > 0:
-            # ⬅️ Usa la nueva función de guardado
-            save_reaction_record(
+         avg_time_float = float(st.session_state['avg_time_display']) if st.session_state['avg_time_display'] != '---' else 0
+         if avg_time_float > 0:
+             save_reaction_record(
                 st.session_state['atleta_nombre'],
                 MODO_RV,
                 avg_time_float,
                 st.session_state.get('hits', 0),
                 st.session_state.get('max_tests_reaction', 10)
-              )
+             )
 
     # Resetea el estado para volver a INICIO
     st.session_state['is_playing_reaction'] = False
@@ -531,6 +753,24 @@ def start_reaction_test():
     
     # Forzar recarga para actualizar la UI a ROJO
     st.rerun()
+
+def simulate_delay_and_go():
+    """
+    Simula el retardo aleatorio y pasa a VERDE automáticamente.
+    Esto se debe llamar DESPUÉS del botón 'INICIAR' en el flujo de la aplicación.
+    """
+    if st.session_state.get('is_playing_reaction') and st.session_state['reaction_state'] == 'ROJO':
+        
+        # 1. Simular la espera (calculamos el tiempo que *debió* esperar)
+        delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
+        
+        # 2. Usar sleep para forzar una pausa real en el flujo.
+        time.sleep(delay)
+        
+        # 3. Transicionar a VERDE
+        st.session_state['reaction_state'] = 'VERDE'
+        st.session_state['reaction_start_time'] = time.time() # Iniciar cronómetro de reacción
+        st.rerun() # Forzar el cambio a VERDE
 
 def update_reaction_state():
     """Lógica para avanzar el ciclo del juego con la interacción del usuario (AVANZAR PASO/SIGUIENTE INTENTO)."""
@@ -606,7 +846,7 @@ def show_reaction_lab(atleta_actual):
         
         # Mapeo de HTML según el estado (para el 'círculo')
         if current_state == 'ROJO':
-            # Aquí es donde simulamos el delay. Se llamará a simulate_delay_and_go()
+             # Aquí es donde simulamos el delay. Se llamará a simulate_delay_and_go()
              color_container_html = "<div style='background-color: red; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: white;'>ESPERANDO...</h1><p style='color: white;'>Prueba: " + str(st.session_state['test_count'] + 1) + "</p></div>"
         elif current_state == 'VERDE':
              color_container_html = "<div style='background-color: green; padding: 100px; border-radius: 10px; text-align: center;'><h1 style='color: black;'>¡GO!</h1><p style='color: black;'>¡REACCIONA AHORA!</p></div>"
@@ -624,7 +864,7 @@ def show_reaction_lab(atleta_actual):
         # --- LÓGICA DE ACTIVACIÓN DE DELAY ---
         # Si estamos en ROJO y JUGANDO, llamamos al simulador para que inicie la pausa y transicione a VERDE
         if st.session_state.get('is_playing_reaction') and current_state == 'ROJO':
-            
+             # Usamos sleep para forzar una pausa real antes de VERDE, simulando el delay aleatorio
              delay = random.uniform(st.session_state['min_delay'], st.session_state['max_delay'])
              time.sleep(delay)
              
@@ -690,11 +930,38 @@ def show_reaction_lab(atleta_actual):
         df_historial = df_reaction_records[df_reaction_records['Atleta'] == atleta_actual].copy()
         st.dataframe(df_historial[['Fecha', 'Tiempo_ms']].tail(5), use_container_width=True)
 
-# ----------------------------------------------------------------------------------
-# --- 5. INTERFAZ PRINCIPAL DE STREAMLIT ---
-# ----------------------------------------------------------------------------------
+# --- 5. CARGA INICIAL DE DATAFRAMES ---
+
+df_atletas, initial_status = load_data()  
+df_calendario_full = load_calendar_data()  
+df_calendario = df_calendario_full[df_calendario_full['Habilitado'] == True].copy()  
+df_pruebas_full, tests_status = load_tests_data()  
+df_pruebas = df_pruebas_full[df_pruebas_full['Visible'] == True].copy()  
+df_perfiles, perfil_status = load_perfil_data()  
+df_ranking, ranking_status = load_ranking_data()
+df_readiness, readiness_status = load_readiness_data()
+df_test_results_full, test_results_status = load_test_results_data() # NUEVA CARGA
+df_reaction_records = load_reaction_records() # NUEVA CARGA
+
+# Muestra mensajes de estado críticos (CREACIÓN o ERROR)
+if initial_status and ('creado' in initial_status.lower() or 'error' in initial_status.lower() or 'adver' in initial_status.lower()):
+    st.toast(initial_status, icon="📝")
+if tests_status and ('creado' in tests_status.lower() or 'error' in tests_status.lower() or 'adver' in tests_status.lower()):
+    st.toast(tests_status, icon="🛠️")
+if perfil_status and ('creado' in perfil_status.lower() or 'error' in perfil_status.lower() or 'adver' in perfil_status.lower()):
+    st.toast(perfil_status, icon="👤")
+if ranking_status and ('creado' in ranking_status.lower() or 'error' in ranking_status.lower() or 'adver' in ranking_status.lower()):
+    st.toast(ranking_status, icon="🏆")
+if readiness_status and ('creado' in readiness_status.lower() or 'error' in readiness_status.lower() or 'adver' in readiness_status.lower()):
+    st.toast(readiness_status, icon="🧘")
+if test_results_status and ('creado' in test_results_status.lower() or 'error' in test_results_status.lower() or 'adver' in test_results_status.lower()):
+    st.toast(test_results_status, icon="🏃")
+
+
+# --- 6. INTERFAZ PRINCIPAL DE STREAMLIT ---
 
 st.set_page_config(layout="wide", page_title="Gestión de Rendimiento Atleta")
+
 
 # Inicializar el estado de la sesión
 if 'logged_in' not in st.session_state:
@@ -758,7 +1025,7 @@ if st.session_state['logged_in']:
     rol_actual = st.session_state['rol']
     atleta_actual = st.session_state['atleta_nombre']
     
-    # === DEFINICIÓN DE PESTAÑAS ===
+    # === DEFINICIÓN DE PESTAÑAS (¡NUEVA PESTAÑA INTEGRADA!) ===
     if rol_actual == 'Entrenador':
         tab1, tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = st.tabs([
             "📊 Vista Entrenador (Datos)",  
@@ -770,7 +1037,7 @@ if st.session_state['logged_in']:
             "🍎 Nutrición",
             "🌡️ Recuperación",
             "🏆 Ranking",
-            "⚡ ReactionLab"
+            "⚡ ReactionLab" # NUEVA PESTAÑA
         ])
     else:
         tab2, PRUEBAS_TAB, CALENDAR_TAB, PERFIL_TAB, ACOND_TAB, NUTRICION_TAB, RECUPERACION_TAB, RANKING_TAB, REACTION_TAB = st.tabs([
@@ -782,7 +1049,7 @@ if st.session_state['logged_in']:
             "🍎 Nutrición",
             "🌡️ Recuperación",
             "🏆 Ranking",
-            "⚡ ReactionLab"
+            "⚡ ReactionLab" # NUEVA PESTAÑA
         ])
 
     # ----------------------------------------------------------------------------------
@@ -821,22 +1088,21 @@ if st.session_state['logged_in']:
             # Botones de recarga
             col_recarga_atletas, col_recarga_pruebas = st.columns(2)
             with col_recarga_atletas:
-                if st.button("Recargar Datos Atletas/Perfiles/Ranking", help="Recarga todos los datos desde la DB."):
+                if st.button("Recargar Datos Atletas/Perfiles/Ranking", help="Recarga todos los archivos de datos dinámicos."):
                     load_data.clear()
                     load_perfil_data.clear()
                     load_ranking_data.clear()
-                    load_test_results_data.clear()
-                    load_reaction_records.clear() # ¡Recarga todos los datos de la DB!
+                    load_test_results_data.clear() # Limpiamos la caché de las pruebas también
                     st.rerun()  
             with col_recarga_pruebas:
-                if st.button("Recargar Calendario/Pruebas Modulares", help="Recarga configuraciones desde la DB."):
+                if st.button("Recargar Calendario/Pruebas Modulares", help="Recarga 'calendario_data.xlsx' y 'pruebas_activas.xlsx'."):
                     load_calendar_data.clear()
                     load_tests_data.clear()
                     st.rerun()
 
             st.markdown("---")
             st.subheader("1. Gestión de Atletas y Marcas RM (Edición Directa)")
-            st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna a la tabla `atletas_data` y volver a cargar la app.")
+            st.warning("⚠️ **ATENCIÓN**: Para añadir **nuevas pruebas RM**, debes agregar la columna al archivo **atletas_data.xlsx** manualmente, subirlo a GitHub y luego hacer clic en 'Recargar Datos Atletas...'.")
 
             df_editor_main = df_atletas.copy()
             
@@ -872,14 +1138,14 @@ if st.session_state['logged_in']:
                 df_edited_cleaned_main = df_edited_main.dropna(subset=['Atleta', 'Contraseña'], how='any')
 
                 if save_main_data(df_edited_cleaned_main):
-                    st.success("✅ Datos de Atletas actualizados y guardados en SQLite con éxito. Recargando aplicación...")
+                    st.success("✅ Datos de Atletas actualizados y guardados con éxito. Recargando aplicación...")
                     st.rerun()
                 else:
                     st.error("❌ No se pudieron guardar los datos de atletas.")
 
             st.markdown("---")
             st.subheader("2. Gestión de Pruebas (Modularidad de la Calculadora)")
-            st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito.**")
+            st.caption(f"**Edita la tabla directamente para añadir/quitar pruebas y marcar 'Visible' con el chulito. Puedes borrar filas haciendo clic en el número de fila.**")
             
             # --- TABLA EDITABLE DE PRUEBAS ---
             
@@ -905,7 +1171,7 @@ if st.session_state['logged_in']:
                 df_edited_cleaned = df_edited.dropna(subset=['NombrePrueba', 'ColumnaRM'], how='all')
 
                 if save_tests_data(df_edited_cleaned):
-                    st.success("✅ Pruebas actualizadas y guardadas en SQLite con éxito. Recargando aplicación...")
+                    st.success("✅ Pruebas actualizadas y guardadas con éxito. Recargando aplicación...")
                     st.rerun()
                 else:
                     st.error("❌ No se pudieron guardar los cambios.")
@@ -933,7 +1199,7 @@ if st.session_state['logged_in']:
             ejercicio_options = df_pruebas['NombrePrueba'].tolist()  
             
             if not ejercicio_options:
-                st.warning("No hay pruebas visibles. El Entrenador debe configurar las pruebas.")
+                st.warning("No hay pruebas visibles. El Entrenador debe configurar el archivo 'pruebas_activas.xlsx'.")
                 rm_value = st.number_input("RM actual (en kg):", min_value=0.0, value=0.0, step=5.0)
             else:
                 ejercicio_default = st.selectbox(
@@ -989,7 +1255,7 @@ if st.session_state['logged_in']:
         with col_metric:
             st.metric(f"Peso Sugerido", f"**{peso_calculado_perc} kg**")
             st.caption(f"Al {porcentaje_input}%")
-            
+        
         # --- MÓDULO 2: CÁLCULO DE CARGA POR RIR Y REPETICIONES ---
         st.markdown("---")
         st.subheader("2. Estimador de Carga por RIR y Repeticiones")
@@ -1067,18 +1333,18 @@ if st.session_state['logged_in']:
             st.table(vbt_guide.set_index('% de 1RM Típico'))
 
     # ----------------------------------------------------------------------------------
-    ## PESTAÑA 3: PRUEBAS FÍSICAS (Visible para todos)
+    ## PESTAÑA 3: PRUEBAS FÍSICAS (NUEVA - Visible para todos)
     # ----------------------------------------------------------------------------------
     with PRUEBAS_TAB:
         st.header("🏋️ Historial y Gestión de Pruebas Físicas")
-        st.caption(f"Datos guardados en la tabla `test_results` de la DB.")
+        st.caption(f"Archivo de origen: **{TEST_RESULTS_FILE}**.")
 
         # Identificar columnas numéricas que representan las pruebas de forma dinámica
         test_columns = [col for col in df_test_results_full.columns if col not in ['ID', 'Atleta', 'Fecha']]
         
         if rol_actual == 'Entrenador':
             st.subheader("Gestión de Resultados Históricos (Edición Directa)")
-            st.warning("⚠️ **ATENCIÓN**: Las filas vacías se eliminarán al guardar. Si añades columnas, estas se guardarán en la tabla de la DB.")
+            st.warning("⚠️ **ATENCIÓN**: Puedes añadir nuevas filas y modificar resultados directamente. Las filas vacías se eliminarán al guardar. Si añades columnas, estas se guardarán.")
             
             df_editor_results = df_test_results_full.copy()
             
@@ -1091,10 +1357,11 @@ if st.session_state['logged_in']:
             
             # Agregamos las columnas de prueba dinámicamente
             for col in test_columns:
+                # Intentamos determinar el tipo de columna (Numérico, Texto, etc.)
                 if df_editor_results[col].dtype in ['float64', 'int64']:
-                    column_config[col] = st.column_config.NumberColumn(col, format="%.2f", min_value=0.0)
+                     column_config[col] = st.column_config.NumberColumn(col, format="%.2f", min_value=0.0)
                 else:
-                    column_config[col] = st.column_config.TextColumn(col)
+                     column_config[col] = st.column_config.TextColumn(col)
             
             
             df_edited_results = st.data_editor(
@@ -1108,7 +1375,7 @@ if st.session_state['logged_in']:
             # 2. Botón de guardado
             if st.button("💾 Guardar Resultados de Pruebas Físicas", type="primary", key="save_test_results_data_btn"):
                 if save_test_results_data(df_edited_results):
-                    st.success("✅ Resultados de Pruebas Físicas actualizados y guardados en SQLite con éxito. Recargando aplicación...")
+                    st.success("✅ Resultados de Pruebas Físicas actualizados y guardados con éxito. Recargando aplicación...")
                     st.rerun()
                 else:
                     st.error("❌ No se pudieron guardar los datos de pruebas.")
@@ -1162,6 +1429,7 @@ if st.session_state['logged_in']:
                     end_value = df_chart.iloc[-1][chart_test]
                     diff = end_value - start_value
                     
+                    # Para carreras (tiempo), un valor negativo es MEJORA. Para saltos/fuerza, un valor positivo es MEJORA.
                     is_time_metric = '(s)' in chart_test or '(min)' in chart_test
                     
                     if (diff < 0 and is_time_metric) or (diff > 0 and not is_time_metric):
@@ -1185,7 +1453,7 @@ if st.session_state['logged_in']:
                 st.warning(f"No hay datos registrados para '{chart_test}' que se puedan graficar.")
                 
         elif rol_actual == 'Entrenador':
-            st.info("Cargue datos en la tabla `test_results` de la DB para ver la tendencia.")
+            st.info("Cargue datos en el archivo 'test_results.xlsx' para ver la tendencia.")
 
 
     # ----------------------------------------------------------------------------------
@@ -1193,7 +1461,7 @@ if st.session_state['logged_in']:
     # ----------------------------------------------------------------------------------
     with CALENDAR_TAB:
         st.header("📅 Calendario de Pruebas y Actividades")
-        st.caption(f"Datos guardados en la tabla `calendario_data` de la DB.")
+        st.caption(f"Archivo de origen: **{CALENDAR_FILE}**")
         
         if rol_actual == 'Entrenador':
             st.subheader("Gestión de Cronograma (Vista Entrenador)")
@@ -1225,7 +1493,7 @@ if st.session_state['logged_in']:
                 df_edited_cleaned = df_edited_calendar.dropna(subset=['Evento', 'Fecha'], how='any')
 
                 if save_calendar_data(df_edited_cleaned):
-                    st.success("✅ Calendario actualizado y guardado en SQLite con éxito. Recargando aplicación...")
+                    st.success("✅ Calendario actualizado y guardado con éxito. Recargando aplicación...")
                     st.rerun()
                 else:
                     st.error("❌ No se pudieron guardar los cambios en el calendario.")
@@ -1255,14 +1523,14 @@ if st.session_state['logged_in']:
     # ----------------------------------------------------------------------------------
     with PERFIL_TAB:
         st.header(f"👤 Perfil y Datos de Contacto de {atleta_actual}")
-        st.caption(f"Datos guardados en las tablas `atletas_data` y `perfiles` de la DB.")
+        st.caption(f"Archivos de origen: Atletas y Perfiles")
 
         # Búsqueda segura de datos:
         atleta_existe = atleta_actual in df_atletas['Atleta'].values
-        datos_perfil_series = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_existe and not df_perfiles.empty else pd.Series()
-        datos_rm_series = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_existe and not df_atletas.empty else pd.Series()
+        datos_perfil_series = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_existe else pd.Series()
+        datos_rm_series = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_existe else pd.Series()
         
-        # Inicialización de datos
+        # Inicialización de datos (CORRECCIÓN DEL NAMEERROR)
         datos_perfil = datos_perfil_series
         datos_rm = datos_rm_series  
         
@@ -1274,13 +1542,14 @@ if st.session_state['logged_in']:
 
 
         if datos_perfil.empty:
-            st.warning("No se encontró información de perfil (Altura, Edad, Sexo, etc.). El Entrenador debe revisar la tabla de perfiles en la DB.")
+            st.warning("No se encontró información de perfil (Altura, Edad, Sexo, etc.). Edita la hoja de Perfiles.")
         
         # --- MÓDULO 1: INFORMACIÓN PERSONAL ---
         st.subheader("Información Personal")
         
         col_personal_1, col_personal_2 = st.columns(2)
         
+        # Aseguramos que solo las columnas esperadas se muestren
         personal_data_display = datos_perfil.drop(labels=['Atleta', 'Sexo'], errors='ignore')
         
         for i, (key, value) in enumerate(personal_data_display.items()):
@@ -1294,6 +1563,8 @@ if st.session_state['logged_in']:
                 
         st.markdown("---")
         st.subheader("Diagnóstico de Fuerza Relativa y Composición Corporal")
+        
+        # Extracción de valores seguros para cálculos
         
         # Cálculo de IMC
         if peso_kg > 0 and altura_cm > 0:
@@ -1332,7 +1603,7 @@ if st.session_state['logged_in']:
         if rol_actual == 'Entrenador':
             st.markdown("---")
             st.subheader("Gestión de Perfiles (Vista Entrenador)")
-            st.caption("Asegúrate de que la columna 'Atleta' en la tabla coincida exactamente con el nombre de usuario.")
+            st.caption("Asegúrate de que la columna 'Atleta' en el Excel coincida exactamente con el nombre de usuario.")
             st.dataframe(df_perfiles, use_container_width=True)
 
 
@@ -1342,7 +1613,7 @@ if st.session_state['logged_in']:
     with ACOND_TAB:
         st.header("🏃 Calculadora de Desempeño y Acondicionamiento")
         
-        datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else pd.Series()
+        datos_perfil = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_actual in df_perfiles['Atleta'].values else None
         
         if not datos_perfil.empty:
             edad = pd.to_numeric(datos_perfil.get('Edad', 25), errors='coerce', downcast='integer')
@@ -1407,7 +1678,7 @@ if st.session_state['logged_in']:
         st.markdown("---")
         
         # --- MÓDULO 3: ESTIMACIÓN VAM Y RITMOS ---
-        st.subheader("2. Estimador de Ritmo de Carrera (VAM)") 
+        st.subheader("2. Estimador de Ritmo de Carrera (VAM)") # Cambiado a 2
         
         col_dist, col_min, col_sec = st.columns(3)
 
@@ -1453,20 +1724,21 @@ if st.session_state['logged_in']:
 
 
     # ----------------------------------------------------------------------------------
-    ## PESTAÑA 7: NUTRICIÓN
+    ## PESTAÑA 7 (Ex-Gestión de Peso): NUTRICIÓN
     # ----------------------------------------------------------------------------------
     with NUTRICION_TAB:
         st.header("🍎 Gestión de Peso, Nutrición y Suplementación")
         
         # Búsqueda de datos para el cálculo (CORRECCIÓN INTEGRADA A LA PESTAÑA)
         atleta_existe = atleta_actual in df_atletas['Atleta'].values
-        datos_perfil_series = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_existe and not df_perfiles.empty else pd.Series()
-        datos_rm_series = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_existe and not df_atletas.empty else pd.Series()
+        datos_perfil_series = df_perfiles[df_perfiles['Atleta'] == atleta_actual].iloc[0] if atleta_existe else pd.Series()
+        datos_rm_series = df_atletas[df_atletas['Atleta'] == atleta_actual].iloc[0] if atleta_existe else pd.Series()
         
         datos_perfil = datos_perfil_series
         datos_rm = datos_rm_series  
         
         # Extracción de valores seguros (USANDO .get() en las series)
+        # Si la serie está vacía, .get() devuelve None, pd.notna(None) es True, luego usamos el valor 0 o el valor por defecto.
         peso_kg = float(datos_rm.get('PesoCorporal', 0)) if pd.notna(datos_rm.get('PesoCorporal')) else 0
         altura_cm = float(datos_perfil.get('Altura_cm', 0)) if pd.notna(datos_perfil.get('Altura_cm')) else 0
         edad_anos = pd.to_numeric(datos_perfil.get('Edad', 0), errors='coerce', downcast='integer') if pd.notna(datos_perfil.get('Edad')) else 0
@@ -1609,10 +1881,11 @@ if st.session_state['logged_in']:
 
     with RECUPERACION_TAB:
         st.header("🌡️ Protocolos de Recuperación y Movilidad")
-        st.caption("Responde el formulario diario para registrar tu estado de recuperación.")
+        st.caption("Responde el formulario diario para registrar tu estado de recuperación (los datos se guardan de forma permanente).")
         st.markdown("---")
 
         # 🚨 1. ENLACE AL FORMULARIO DE GOOGLE (SOLUCIÓN PERSISTENTE)
+        # Reemplazamos los sliders con el formulario de Google Forms
         
         st.subheader("Formulario de Diagnóstico SRD")
         
@@ -1664,7 +1937,7 @@ if st.session_state['logged_in']:
     with RANKING_TAB:
         st.header("🏆 Ranking de Atletas")
         st.caption("Ordenado por: **Oros > Platas > Bronces**. (Oro=10, Plata=3, Bronce=1)")
-        st.caption(f"Datos guardados en la tabla `ranking` de la DB.")
+        st.caption(f"Archivo de origen: **{RANKING_FILE}**")
         
         # --- Lógica de Podio Visual (TOP 3) ---
         if not df_ranking.empty:
@@ -1731,7 +2004,7 @@ if st.session_state['logged_in']:
             
             if st.button("💾 Guardar y Recalcular Ranking", type="primary", key="save_ranking_data_btn"):
                 if save_ranking_data(df_edited_ranking):
-                    st.success("✅ Ranking recalculado, ordenado y guardado en SQLite con éxito. Recargando aplicación...")
+                    st.success("✅ Ranking recalculado, ordenado y guardado con éxito. Recargando aplicación...")
                     st.rerun()
                 else:
                     st.error("❌ No se pudieron guardar los cambios en el ranking.")
@@ -1743,7 +2016,7 @@ if st.session_state['logged_in']:
 
         # --- TABLA COMPLETA (Visible para todos) ---
         if df_ranking.empty:
-            st.info("No hay datos de ranking para mostrar. El entrenador debe cargar la tabla.")
+            st.info("No hay datos de ranking para mostrar. El entrenador debe cargar el archivo.")
         else:
             cols_to_show = ['Posicion', 'Atleta', 'Categoria', 'Oros', 'Platas', 'Bronces']
             
@@ -1772,3 +2045,4 @@ if st.session_state['logged_in']:
                 
                 medals_text = f"🥇 {int(rank_data['Oros'])} | 🥈 {int(rank_data['Platas'])} | 🥉 {int(rank_data['Bronces'])}"
                 col_medals.markdown(f"**Medallas:** <div style='font-size: 1.5em;'>{medals_text}</div>", unsafe_allow_html=True)
+
